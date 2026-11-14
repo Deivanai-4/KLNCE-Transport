@@ -1,0 +1,6 @@
+{
+  "buildCommand": "if [ -z \"$API_BASE_URL\" ]; then echo 'Set API_BASE_URL in the Vercel project environment.' >&2; exit 1; fi && if cd flutter; then git pull && cd ..; else git clone https://github.com/flutter/flutter.git; fi && flutter/bin/flutter config --enable-web && flutter/bin/flutter build web --release --dart-define=API_BASE_URL=\"$API_BASE_URL\"",
+  "outputDirectory": "build/web",
+  "installCommand": "echo 'Flutter install handled in buildCommand'",
+  "framework": null
+}

@@ -1,0 +1,37 @@
+name: klnce_transport
+description: KLNCE Smart Transport System - Bus schedule and tracking for K.L.N. College of Engineering
+version: 1.0.0+1
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP & API
+  http: ^1.2.1
+
+  # State Management
+  provider: ^6.1.2
+
+  # Local Storage / Offline
+  shared_preferences: ^2.2.3
+
+  # File Picker (for OCR upload on admin)
+  file_picker: ^8.0.3
+
+  # UI Extras
+  cupertino_icons: ^1.0.6
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/klnce_transport_logo.png

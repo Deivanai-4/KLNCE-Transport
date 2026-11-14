@@ -1,0 +1,30 @@
+.env
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+uploads/*
+!uploads/.gitkeep
+temp/*
+!temp/.gitkeep
+
+# Android Gradle cache
+**/.gradle/
+
+# Local Android SDK configuration
+**/local.properties
+
+# Temporary backup files
+*.backup
+
+# Flutter generated files
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Build output
+**/build/
