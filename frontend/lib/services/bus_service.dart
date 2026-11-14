@@ -8,6 +8,9 @@ class BusService extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   String _lastQuery = '';
+  int _searchRevision = 0;
+  String? _activeTrip;
+  String? get activeTrip => _activeTrip;
 
   List<BusRoute> get searchResults => _searchResults;
   List<Map<String, dynamic>> get allStops => _allStops;
@@ -15,10 +18,12 @@ class BusService extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get lastQuery => _lastQuery;
 
-  Future<void> searchByStop(String stopName, {String trip = 'incoming'}) async {
+  Future<void> searchByStop(String stopName, {String? trip}) async {
+    final requestRevision = ++_searchRevision;
     if (stopName.trim().isEmpty) {
       _searchResults = [];
       _lastQuery = '';
+      _isLoading = false;
       notifyListeners();
       return;
     }
@@ -30,20 +35,28 @@ class BusService extends ChangeNotifier {
 
     try {
       final encodedStop = Uri.encodeComponent(stopName.trim());
-      final res = await ApiService.get('/buses/search?stop=$encodedStop&trip=$trip');
+      final tripParam = trip == null ? '' : '&trip=$trip';
+      final res = await ApiService.get(
+        '/buses/search?stop=$encodedStop$tripParam',
+      );
+      if (requestRevision != _searchRevision) return;
+      _activeTrip = res['active_trip'] as String?;
       final raw = res['buses'] as List<dynamic>? ?? [];
-      _searchResults = raw
-          .map((b) => BusRoute.fromJson(b as Map<String, dynamic>))
-          .toList();
+      _searchResults =
+          raw.map((b) => BusRoute.fromJson(b as Map<String, dynamic>)).toList();
     } on ApiException catch (e) {
+      if (requestRevision != _searchRevision) return;
       _errorMessage = e.message;
       _searchResults = [];
     } catch (e) {
+      if (requestRevision != _searchRevision) return;
       _errorMessage = 'Network error. Check backend connection.';
       _searchResults = [];
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (requestRevision == _searchRevision) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -59,9 +72,11 @@ class BusService extends ChangeNotifier {
   }
 
   void clearResults() {
+    _searchRevision++;
     _searchResults = [];
     _lastQuery = '';
     _errorMessage = null;
+    _isLoading = false;
     notifyListeners();
   }
 }

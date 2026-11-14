@@ -12,6 +12,11 @@ from models.schedule import ScheduleDocument
 from models.bus_route import BusRoute
 from models.route_stop import RouteStop
 from routes.auth import admin_required
+from services.schedule_visibility import (
+    is_trip_visible,
+    ist_now,
+    visibility_metadata,
+)
 from services.storage_service import save_uploaded_file, save_uploaded_bytes, get_file_path
 from services.firebase_service import send_notification_to_all
 from ocr.preprocessor import preprocess_image
@@ -27,12 +32,19 @@ def get_published_schedule():
     """Returns the verified, published timetable accessible to students & mobile offline sync."""
     trip = request.args.get('trip')
     college = request.args.get('college')
+    now = ist_now()
+    metadata = visibility_metadata(now)
 
-    schedule = ScheduleDocument.get_published(trip_direction=trip, college=college)
-    if not schedule:
-        return jsonify({'message': 'No published schedule available currently', 'schedule': None}), 404
+    schedule = ScheduleDocument.get_published(
+        trip_direction=trip,
+        college=college,
+        now=now,
+    )
 
-    return jsonify({'schedule': schedule.to_dict(include_routes=True)}), 200
+    return jsonify({
+        'schedule': schedule.to_dict(include_routes=True) if schedule else None,
+        **metadata,
+    }), 200
 
 
 @schedules_bp.route('', methods=['GET'])
@@ -46,9 +58,15 @@ def list_all_schedules():
 @schedules_bp.route('/<int:schedule_id>', methods=['GET'])
 def get_schedule_detail(schedule_id: int):
     """Returns schedule details with all parsed bus routes and sequence of stops."""
+    now = ist_now()
     schedule = ScheduleDocument.find_by_id(schedule_id)
     if not schedule:
         return jsonify({'error': 'Schedule not found'}), 404
+    if (
+        schedule.status == 'published'
+        and not is_trip_visible(schedule.trip_direction, now)
+    ):
+        return jsonify({'error': 'Schedule is not currently available'}), 404
     return jsonify({'schedule': schedule.to_dict(include_routes=True)}), 200
 
 

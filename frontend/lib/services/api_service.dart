@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
@@ -21,21 +20,28 @@ class ApiService {
     if (baseUrl.isEmpty) {
       throw ApiException(
         503,
-        'Backend URL is not configured. Build with '
-        '--dart-define=API_BASE_URL=https://your-backend.example/api.',
+        'Backend URL is not configured. Please tap the Server settings icon to configure your server address.',
       );
     }
     final uri = Uri.tryParse('$baseUrl$endpoint');
     if (uri == null || !uri.hasAuthority) {
-      throw ApiException(503, 'The configured backend URL is invalid.');
-    }
-    if (!kDebugMode && uri.scheme != 'https') {
-      throw ApiException(
-        503,
-        'The production backend URL must use HTTPS.',
-      );
+      throw ApiException(503, 'The configured backend URL ($baseUrl) is invalid.');
     }
     return uri;
+  }
+
+  /// Pings the backend /health endpoint to check reachability.
+  static Future<bool> testHealth([String? candidateUrl]) async {
+    final testUrl = (candidateUrl != null && candidateUrl.trim().isNotEmpty)
+        ? candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '')
+        : baseUrl;
+    try {
+      final healthUri = Uri.parse('$testUrl/health');
+      final res = await http.get(healthUri).timeout(const Duration(seconds: 4));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<Map<String, String>> _getHeaders({bool isJson = true}) async {

@@ -1,6 +1,8 @@
 import 'bus_route.dart';
 
 class Schedule {
+  static const Duration _istOffset = Duration(hours: 5, minutes: 30);
+
   final int id;
   final String title;
   final String fileUrl;
@@ -31,6 +33,30 @@ class Schedule {
 
   bool get isPublished => status == 'published';
   bool get isDraft => status == 'draft' || status == 'verified';
+
+  bool isVisibleAtIst(DateTime now) => activeTripAtIst(now) == tripDirection;
+
+  static String? activeTripAtIst(DateTime now) {
+    final ist = now.toUtc().add(_istOffset);
+    final minutesSinceMidnight = ist.hour * 60 + ist.minute;
+    if (minutesSinceMidnight < 12 * 60) return 'incoming';
+    if (minutesSinceMidnight < 21 * 60) return 'outgoing';
+    return null;
+  }
+
+  static DateTime nextTransitionIstUtc(DateTime now) {
+    final ist = now.toUtc().add(_istOffset);
+    final minutesSinceMidnight = ist.hour * 60 + ist.minute;
+    final DateTime transition;
+    if (minutesSinceMidnight < 12 * 60) {
+      transition = DateTime.utc(ist.year, ist.month, ist.day, 12);
+    } else if (minutesSinceMidnight < 21 * 60) {
+      transition = DateTime.utc(ist.year, ist.month, ist.day, 21);
+    } else {
+      transition = DateTime.utc(ist.year, ist.month, ist.day + 1);
+    }
+    return transition.subtract(_istOffset);
+  }
 
   bool isActivityVisibleAt(DateTime now) {
     final cutoff = now.toUtc().subtract(const Duration(days: 7));

@@ -8,15 +8,26 @@ class ScheduleService extends ChangeNotifier {
   List<Schedule> _allSchedules = [];
   bool _isLoading = false;
   String? _errorMessage;
+  int _publishedRequestRevision = 0;
+  bool _lastPublishedFetchSucceeded = false;
+  String? _activeTrip;
+  DateTime? _serverTimeIst;
+  DateTime? _nextTransitionIst;
 
   Schedule? get publishedSchedule => _publishedSchedule;
   List<Schedule> get allSchedules => _allSchedules;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  bool get lastPublishedFetchSucceeded => _lastPublishedFetchSucceeded;
+  String? get activeTrip => _activeTrip;
+  DateTime? get serverTimeIst => _serverTimeIst;
+  DateTime? get nextTransitionIst => _nextTransitionIst;
 
   Future<void> fetchPublishedSchedule({String? trip, String? college}) async {
+    final requestRevision = ++_publishedRequestRevision;
     _isLoading = true;
     _errorMessage = null;
+    _lastPublishedFetchSucceeded = false;
     notifyListeners();
 
     try {
@@ -29,23 +40,41 @@ class ScheduleService extends ChangeNotifier {
       }
 
       final res = await ApiService.get(endpoint);
-      if (res['schedule'] != null) {
-        _publishedSchedule =
-            Schedule.fromJson(res['schedule'] as Map<String, dynamic>);
-      } else {
-        _publishedSchedule = null;
-        _errorMessage = 'No published schedule is available.';
-      }
+      if (requestRevision != _publishedRequestRevision) return;
+      _activeTrip = res['active_trip'] as String?;
+      _serverTimeIst = DateTime.tryParse(
+        res['server_time_ist']?.toString() ?? '',
+      );
+      _nextTransitionIst = DateTime.tryParse(
+        res['next_transition_ist']?.toString() ?? '',
+      );
+      final rawSchedule = res['schedule'];
+      _publishedSchedule = rawSchedule is Map<String, dynamic>
+          ? Schedule.fromJson(rawSchedule)
+          : null;
+      _lastPublishedFetchSucceeded = true;
     } on ApiException catch (e) {
+      if (requestRevision != _publishedRequestRevision) return;
       _publishedSchedule = null;
       _errorMessage = e.message;
+      _clearPublishedAvailability();
     } catch (e) {
+      if (requestRevision != _publishedRequestRevision) return;
       _publishedSchedule = null;
       _errorMessage = 'Could not load timetable.';
+      _clearPublishedAvailability();
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (requestRevision == _publishedRequestRevision) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  void _clearPublishedAvailability() {
+    _activeTrip = null;
+    _serverTimeIst = null;
+    _nextTransitionIst = null;
   }
 
   Future<void> fetchAllSchedules() async {
@@ -152,7 +181,8 @@ class ScheduleService extends ChangeNotifier {
       }
 
       if (res['schedule'] != null) {
-        final draft = Schedule.fromJson(res['schedule'] as Map<String, dynamic>);
+        final draft =
+            Schedule.fromJson(res['schedule'] as Map<String, dynamic>);
         _isLoading = false;
         notifyListeners();
         return draft;
@@ -160,7 +190,8 @@ class ScheduleService extends ChangeNotifier {
     } on ApiException catch (e) {
       _errorMessage = e.message;
     } catch (e) {
-      _errorMessage = 'Schedule upload & OCR processing failed: ${e.toString()}';
+      _errorMessage =
+          'Schedule upload & OCR processing failed: ${e.toString()}';
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -168,7 +199,8 @@ class ScheduleService extends ChangeNotifier {
     return null;
   }
 
-  Future<bool> updateDraftRoutes(int scheduleId, List<Map<String, dynamic>> routes) async {
+  Future<bool> updateDraftRoutes(
+      int scheduleId, List<Map<String, dynamic>> routes) async {
     _isLoading = true;
     notifyListeners();
 
@@ -206,4 +238,3 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 }
-

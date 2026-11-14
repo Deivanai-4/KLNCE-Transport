@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import 'api_service.dart';
@@ -67,8 +68,17 @@ class AuthService extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
+    } on http.ClientException catch (e) {
+      debugPrint('Login request could not reach the backend: ${e.message}');
+      _errorMessage = 'Cannot reach the backend. On Wi-Fi, set API_BASE_URL '
+          'to your computer’s LAN IP and keep the backend running; on cellular, '
+          'use a public HTTPS backend URL.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
-      _errorMessage = 'Network error. Please verify backend connection.';
+      debugPrint('Unexpected login error: $e');
+      _errorMessage = 'Sign-in failed unexpectedly. Please try again.';
       _isLoading = false;
       notifyListeners();
       return false;

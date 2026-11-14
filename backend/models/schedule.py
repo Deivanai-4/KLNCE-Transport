@@ -4,6 +4,7 @@ ScheduleDocument model representing uploaded schedule files and verification sta
 
 from datetime import datetime
 from models import db
+from services.schedule_visibility import active_trip_at
 
 
 class ScheduleDocument(db.Model):
@@ -50,10 +51,22 @@ class ScheduleDocument(db.Model):
         return data
 
     @classmethod
-    def get_published(cls, trip_direction: str = None, college: str = None):
+    def get_published(
+        cls,
+        trip_direction: str = None,
+        college: str = None,
+        now: datetime = None,
+    ):
+        active_trip = active_trip_at(now)
+        if active_trip is None:
+            return None
+        if trip_direction is None:
+            trip_direction = active_trip
+        elif trip_direction != active_trip:
+            return None
+
         q = cls.query.filter_by(status='published')
-        if trip_direction:
-            q = q.filter_by(trip_direction=trip_direction)
+        q = q.filter_by(trip_direction=trip_direction)
         if college and college != 'both':
             q = q.filter(cls.college.in_([college, 'both']))
         return q.order_by(cls.effective_date.desc()).first()

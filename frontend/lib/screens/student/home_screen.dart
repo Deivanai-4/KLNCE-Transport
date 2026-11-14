@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -20,9 +22,12 @@ class StudentHomeScreen extends StatefulWidget {
   State<StudentHomeScreen> createState() => _StudentHomeScreenState();
 }
 
-class _StudentHomeScreenState extends State<StudentHomeScreen> {
+class _StudentHomeScreenState extends State<StudentHomeScreen>
+    with WidgetsBindingObserver {
   String _selectedTrip = 'incoming';
+  Timer? _scheduleTransitionTimer;
   bool _isOffline = false;
+  bool _awaitingScheduleRefresh = false;
   String? _lastSyncTime;
   Schedule? _offlineSchedule;
   List<Map<String, dynamic>> _notifications = [];
@@ -31,10 +36,25 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSchedule();
       _loadNotifications();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scheduleTransitionTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadSchedule();
+    }
   }
 
   Future<void> _refresh() async {
@@ -55,29 +75,75 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     }
   }
 
-  Future<void> _loadSchedule() async {
+  Future<void> _loadSchedule({String? trip}) async {
     final service = context.read<ScheduleService>();
-    await service.fetchPublishedSchedule(trip: _selectedTrip);
+    await service.fetchPublishedSchedule(trip: trip);
 
     if (!mounted) return;
-    if (service.errorMessage == null && service.publishedSchedule != null) {
-      await OfflineService.cacheSchedule(service.publishedSchedule!);
-      if (!mounted) return;
+    if (service.lastPublishedFetchSucceeded) {
+      final activeTrip = service.activeTrip;
+      if (trip == null && activeTrip != null) {
+        _selectedTrip = activeTrip;
+      }
+      final published = service.publishedSchedule;
+      if (published != null) {
+        await OfflineService.cacheSchedule(published);
+        if (!mounted) return;
+      }
       setState(() {
         _isOffline = false;
+        _awaitingScheduleRefresh = false;
         _lastSyncTime = null;
         _offlineSchedule = null;
       });
+      _scheduleNextTransition(service.nextTransitionIst, service.serverTimeIst);
       return;
     }
 
-    final cached = await OfflineService.getCachedSchedule(trip: _selectedTrip);
-    final lastSync = await OfflineService.getLastSyncTime(trip: _selectedTrip);
+    final activeTrip = trip ?? Schedule.activeTripAtIst(DateTime.now().toUtc());
+    if (trip == null && activeTrip != null) {
+      _selectedTrip = activeTrip;
+    }
+    final cached = activeTrip == null
+        ? null
+        : await OfflineService.getCachedSchedule(trip: activeTrip);
+    final visibleCached =
+        cached != null && cached.isVisibleAtIst(DateTime.now().toUtc())
+            ? cached
+            : null;
+    final lastSync = activeTrip == null
+        ? null
+        : await OfflineService.getLastSyncTime(trip: activeTrip);
     if (!mounted) return;
     setState(() {
-      _offlineSchedule = cached;
-      _lastSyncTime = lastSync;
-      _isOffline = cached != null;
+      _awaitingScheduleRefresh = false;
+      _offlineSchedule = visibleCached;
+      _lastSyncTime = visibleCached == null ? null : lastSync;
+      _isOffline = visibleCached != null;
+    });
+    _scheduleNextTransition(null, null);
+  }
+
+  void _scheduleNextTransition(
+      DateTime? serverTransition, DateTime? serverTime) {
+    _scheduleTransitionTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    final nextTransition =
+        serverTransition ?? Schedule.nextTransitionIstUtc(now);
+    var delay = serverTransition != null && serverTime != null
+        ? serverTransition.difference(serverTime)
+        : nextTransition.difference(now);
+    if (delay.isNegative || delay == Duration.zero) {
+      delay = Schedule.nextTransitionIstUtc(now).difference(now);
+    }
+    _scheduleTransitionTimer = Timer(delay, () {
+      if (!mounted) return;
+      setState(() {
+        _awaitingScheduleRefresh = true;
+        _isOffline = false;
+        _offlineSchedule = null;
+      });
+      _loadSchedule();
     });
   }
 
@@ -108,8 +174,16 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Widget build(BuildContext context) {
     final service = context.watch<ScheduleService>();
     final auth = context.watch<AuthService>();
-    final schedule = _isOffline ? _offlineSchedule : service.publishedSchedule;
-    final date = DateFormat('EEEE, d MMMM').format(DateTime.now());
+    final schedule = _awaitingScheduleRefresh
+        ? null
+        : _isOffline
+            ? _offlineSchedule
+            : service.publishedSchedule;
+    final dateTime = service.serverTimeIst?.toUtc().add(
+              const Duration(hours: 5, minutes: 30),
+            ) ??
+        DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    final date = DateFormat('EEEE, d MMMM').format(dateTime);
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -196,7 +270,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   onSelectionChanged: (selection) {
                     if (selection.isEmpty) return;
                     setState(() => _selectedTrip = selection.first);
-                    _loadSchedule();
+                    _loadSchedule(trip: selection.first);
                   },
                 ),
               ),
@@ -353,7 +427,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: _ScheduleUnavailable(
-                  message: service.errorMessage,
+                  message: service.errorMessage ??
+                      (service.lastPublishedFetchSucceeded &&
+                              service.activeTrip == null
+                          ? 'No schedule is active now. The morning schedule returns at midnight (IST).'
+                          : null),
                   onRetry: _loadSchedule,
                 ),
               )

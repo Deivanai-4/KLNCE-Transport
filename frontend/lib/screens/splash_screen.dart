@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   late final AnimationController _routeController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 5200),
+    duration: const Duration(milliseconds: 12000),
   )..repeat(reverse: true);
   late final CurvedAnimation _routeAnimation = CurvedAnimation(
     parent: _routeController,
@@ -28,7 +28,7 @@ class _SplashScreenState extends State<SplashScreen>
   );
   late final AnimationController _pulseController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2600),
+    duration: const Duration(milliseconds: 5200),
   )..repeat(reverse: true);
   late final CurvedAnimation _pulseAnimation = CurvedAnimation(
     parent: _pulseController,
@@ -42,10 +42,12 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _init() async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
+    final minimumDisplayTime = Future<void>.delayed(
+      const Duration(milliseconds: 2400),
+    );
     final auth = Provider.of<AuthService>(context, listen: false);
     final loggedIn = await auth.tryAutoLogin();
+    await minimumDisplayTime;
     if (!mounted) return;
     Widget dest;
     if (loggedIn) {

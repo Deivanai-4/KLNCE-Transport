@@ -9,6 +9,7 @@ from models.schedule import ScheduleDocument
 from models.bus_route import BusRoute
 from models.route_stop import RouteStop
 from models.master_stop import MasterStop
+from services.schedule_visibility import ist_now, visibility_metadata
 
 buses_bp = Blueprint('buses_bp', __name__, url_prefix='/api/buses')
 
@@ -20,18 +21,27 @@ def search_buses_by_stop():
     Search buses passing through a boarding point in Tamil or English.
     Query params:
         - stop: stop name query (e.g. 'Teppakulam', 'தெப்பக்குளம்', 'Thirunagar', 'Periyar')
-        - trip: 'incoming' or 'outgoing' (default: 'incoming')
+        - trip: 'incoming' or 'outgoing' (defaults to the active IST window)
     """
     stop_query = request.args.get('stop', '').strip()
-    trip_direction = request.args.get('trip', 'incoming')
+    trip_direction = request.args.get('trip')
+    now = ist_now()
+    metadata = visibility_metadata(now)
 
     if not stop_query:
         return jsonify({'error': 'Stop name query parameter is required'}), 400
 
     # 1. Fetch current active published schedule
-    schedule = ScheduleDocument.get_published(trip_direction=trip_direction)
+    schedule = ScheduleDocument.get_published(
+        trip_direction=trip_direction,
+        now=now,
+    )
     if not schedule:
-        return jsonify({'message': 'No published schedule available', 'buses': []}), 200
+        return jsonify({
+            'message': 'No published schedule available',
+            'buses': [],
+            **metadata,
+        }), 200
 
     # 2. Search route_stops matching the query in English, Tamil, or master stop aliases
     term = f"%{stop_query}%"
@@ -56,7 +66,8 @@ def search_buses_by_stop():
     return jsonify({
         'query': stop_query,
         'count': len(results),
-        'buses': results
+        'buses': results,
+        **metadata,
     }), 200
 
 

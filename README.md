@@ -14,6 +14,7 @@ A unified smart transport and college bus management platform for **K.L.N. Colle
 2. **Student & Staff Mobile Application (Flutter)**
    - Fast boarding stop search (bilingual support: e.g. "Teppakulam" or "தெப்பக்குளம்").
    - Detailed bus routes with sequence of stops and estimated arrival times.
+   - Published schedules use Indian Standard Time: "To campus" is visible from midnight until 12:00 PM, "From campus" from 12:00 PM until 9:00 PM, and no schedule is shown from 9:00 PM until the next midnight reset. Expired schedules are hidden, not deleted.
    - **Offline Access:** Timetables cached locally via SQLite (`sqflite`). Works without internet on campus.
    - Live GPS tracking of college buses on Google Maps.
 3. **Admin Web Dashboard (Flutter Web)**
@@ -84,8 +85,8 @@ flutter pub get
 # Run on Chrome (Admin Web Dashboard)
 flutter run -d chrome
 
-# Run on Android Device / Emulator (Student App)
-flutter run -d android
+# Run on an Android emulator (Student App)
+flutter run -d <emulator-device-id> --dart-define=API_BASE_URL=http://10.0.2.2:5000/api
 ```
 
 ### Mobile Network / Production API
@@ -122,11 +123,19 @@ flutter run -d <device-id> --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/
 flutter build apk --release --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api
 ```
 
-The app's debug defaults are for local web and Android-emulator development
-only. Release builds require a public HTTPS `API_BASE_URL`; without it, API
-requests show an explicit configuration error instead of trying a Wi-Fi-only
-address. Once deployed, both web and mobile builds use the same backend over
-Wi-Fi or cellular data.
+Flutter web debug defaults to the local backend. Android builds require an
+explicit `API_BASE_URL`, because emulator and physical-phone addresses differ.
+For a physical phone on the same Wi-Fi as the computer running Flask, use:
+
+```bash
+cd frontend
+flutter run -d <phone-device-id> --dart-define=API_BASE_URL=http://<COMPUTER-LAN-IP>:5000/api
+```
+
+Keep Flask running and allow port 5000 through the computer's firewall. This
+local address works only on the same network; cellular data requires the public
+HTTPS backend URL. Release builds require HTTPS and show an explicit
+configuration error if `API_BASE_URL` is missing.
 
 ---
 

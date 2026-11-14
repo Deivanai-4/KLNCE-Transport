@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../main.dart';
 import '../../services/bus_service.dart';
 import '../../models/bus_route.dart';
+import '../../models/schedule.dart';
 import '../../widgets/bus_card.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -12,14 +15,24 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends State<SearchScreen>
+    with WidgetsBindingObserver {
   final _searchCtrl = TextEditingController();
-  String _selectedTrip = 'incoming';
+  String _selectedTrip =
+      Schedule.activeTripAtIst(DateTime.now().toUtc()) ?? 'incoming';
+  bool _manuallySelectedTrip = false;
+  Timer? _scheduleTransitionTimer;
   final _focusNode = FocusNode();
 
   final _quickStops = [
-    'Teppakulam', 'Periyar', 'Thirunagar', 'Mattuthavani',
-    'Madurai Junction', 'Silaiman', 'Arapalayam', 'KK Nagar',
+    'Teppakulam',
+    'Periyar',
+    'Thirunagar',
+    'Mattuthavani',
+    'Madurai Junction',
+    'Silaiman',
+    'Arapalayam',
+    'KK Nagar',
   ];
 
   final _tamilStops = ['தேரடி', 'பெரியார்', 'திருநகர்', 'மட்டுத்தாவணி'];
@@ -27,6 +40,8 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleNextTransition();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -34,9 +49,41 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scheduleTransitionTimer?.cancel();
     _searchCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _updateActiveTrip();
+    }
+  }
+
+  void _scheduleNextTransition() {
+    _scheduleTransitionTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    final delay = Schedule.nextTransitionIstUtc(now).difference(now);
+    _scheduleTransitionTimer = Timer(delay, _updateActiveTrip);
+  }
+
+  void _updateActiveTrip() {
+    if (!mounted) return;
+    final activeTrip = Schedule.activeTripAtIst(DateTime.now().toUtc());
+    final shouldRefresh = _manuallySelectedTrip || activeTrip != _selectedTrip;
+    _manuallySelectedTrip = false;
+    if (shouldRefresh) {
+      if (activeTrip != null) {
+        setState(() => _selectedTrip = activeTrip);
+      }
+      if (_searchCtrl.text.trim().length >= 2) {
+        _search(_searchCtrl.text);
+      }
+    }
+    _scheduleNextTransition();
   }
 
   void _search(String query) {
@@ -45,7 +92,17 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
     final svc = Provider.of<BusService>(context, listen: false);
-    svc.searchByStop(query.trim(), trip: _selectedTrip);
+    svc
+        .searchByStop(
+      query.trim(),
+      trip: _manuallySelectedTrip ? _selectedTrip : null,
+    )
+        .then((_) {
+      if (!mounted || _manuallySelectedTrip || svc.activeTrip == null) return;
+      if (svc.activeTrip != _selectedTrip) {
+        setState(() => _selectedTrip = svc.activeTrip!);
+      }
+    });
   }
 
   void _quickSearch(String stop) {
@@ -106,7 +163,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   selected: {_selectedTrip},
                   onSelectionChanged: (selection) {
                     if (selection.isEmpty) return;
-                    setState(() => _selectedTrip = selection.first);
+                    setState(() {
+                      _selectedTrip = selection.first;
+                      _manuallySelectedTrip = true;
+                    });
                     if (_searchCtrl.text.trim().length >= 2) {
                       _search(_searchCtrl.text);
                     }
@@ -219,8 +279,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.emerald.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: AppColors.emerald.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.emerald.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
@@ -285,8 +344,8 @@ class _SearchScreenState extends State<SearchScreen> {
             Text(
               'No bus passes through "$query".\nTry a nearby area or check spelling.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 13),
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 24),
             Wrap(
@@ -327,8 +386,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   color: AppColors.textPrimary)),
           const SizedBox(height: 4),
           const Text('Tap to quickly find your bus',
-              style:
-                  TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
@@ -344,8 +402,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       backgroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(
-                            color: Color(0xFFE2E8F0)),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
                       ),
                       elevation: 0,
                     ))
@@ -372,8 +429,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       backgroundColor: AppColors.artsBg,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(
-                            color: Color(0xFFDDD6FE)),
+                        side: const BorderSide(color: Color(0xFFDDD6FE)),
                       ),
                       elevation: 0,
                     ))
@@ -392,8 +448,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: AppColors.emerald.withOpacity(0.2)),
+              border: Border.all(color: AppColors.emerald.withOpacity(0.2)),
             ),
             child: Row(
               children: [
@@ -420,8 +475,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       Text(
                         'Search in Tamil (தேரடி) or English (Madurai Junction)',
                         style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSecondary),
+                            fontSize: 11, color: AppColors.textSecondary),
                       ),
                     ],
                   ),
