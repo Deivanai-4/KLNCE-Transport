@@ -3,19 +3,42 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
+import 'services/api_service.dart';
 import 'services/schedule_service.dart';
 import 'services/bus_service.dart';
 import 'services/gps_service.dart';
 import 'screens/splash_screen.dart';
 import 'config/app_config.dart';
 import 'config/firebase_options.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  await AppConfig.initialize();
+
+  // Firebase is non-blocking — the app works even if Firebase is unavailable.
+  // Login uses our own JWT auth (email + password via backend).
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('Firebase init warning (non-fatal): $e');
+  }
+
+  // Load saved JWT token so returning users are auto-logged in.
+  try {
+    await ApiService.loadToken();
+  } catch (e) {
+    debugPrint('Token load warning: $e');
+  }
+
+  try {
+    await AppConfig.initialize();
+  } catch (e) {
+    debugPrint('AppConfig init warning: $e');
+  }
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -158,6 +181,7 @@ class KlnceTransportApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'KLNCE Smart Transport',
+        scaffoldMessengerKey: NotificationService.scaffoldMessengerKey,
         debugShowCheckedModeBanner: false,
         theme: _buildTheme(),
         home: const SplashScreen(),

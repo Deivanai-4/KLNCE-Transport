@@ -13,6 +13,7 @@ if backend_dir not in sys.path:
 
 from flask import Flask, jsonify
 from dotenv import load_dotenv
+from flask_jwt_extended import JWTManager
 
 load_dotenv(os.path.join(backend_dir, '.env'))
 
@@ -44,8 +45,16 @@ def create_app(config_class=None):
         config_class = get_config()
     app.config.from_object(config_class)
 
+    # JWT configuration (uses SECRET_KEY from config, or fallback)
+    app.config.setdefault(
+        'JWT_SECRET_KEY',
+        os.environ.get('JWT_SECRET_KEY', 'klnce-jwt-secret-key-2026-production-change')
+    )
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False  # tokens don't expire (simple setup)
+
     # Initialize Extensions
     db.init_app(app)
+    JWTManager(app)
     # CORS configuration for Flutter Mobile & Web
     CORS(
         app,

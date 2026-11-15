@@ -20,7 +20,6 @@ class AppConfig {
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('auth_token');
       final saved = prefs.getString(keyCustomApiUrl);
       if (saved != null && saved.trim().isNotEmpty) {
         _customProductionUrl = saved.trim().replaceFirst(RegExp(r'/+$'), '');
