@@ -31,6 +31,9 @@ exit;
 # Import table definitions
 mysql -u root -p klnce_transport < database/schema.sql
 
+# Existing database: allow Firebase-only profiles without a local password.
+mysql -u root -p klnce_transport < database/migrations/20261115_firebase_auth.sql
+
 # Import stops catalog and published schedule data
 mysql -u root -p klnce_transport < database/seed_data.sql
 ```
@@ -55,19 +58,21 @@ SHOW TABLES;
 
 ## Administrator Account
 
-Seed data does not create accounts with shared demo credentials. After
-configuring `backend/.env` and installing the backend dependencies, create or
-update the administrator securely; the password is requested without echo and
-stored as a bcrypt hash:
+Create and verify the administrator account in Firebase Authentication first.
+Configure `FIREBASE_CREDENTIALS` in `backend/.env`, install the backend
+dependencies, and run the profile-linking script:
 
 ```bash
 cd backend
-python set_admin_credentials.py --email klnce@transport
+python set_admin_profile.py --email admin@example.com
 ```
 
-If the database has multiple administrators, select the one to update with
-`--current-email existing-admin@example.com`. The script verifies login through
-the authentication API before reporting success.
+The Firebase account's verified email must match the email supplied here.
+If the database has multiple administrators, select the profile to update with
+`--current-email existing-admin@example.com`. Other student, staff, and driver
+profiles must likewise use the corresponding verified Firebase email.
+The existing-database migration clears legacy bcrypt password hashes because
+passwords are now handled exclusively by Firebase Authentication.
 
 ---
 
@@ -79,6 +84,7 @@ the authentication API before reporting success.
 3. Import the files using your MySQL client:
    ```bash
    mysql -h <RAILWAY_HOST> -P <PORT> -u <USER> -p<PASSWORD> <DB_NAME> < database/schema.sql
+   mysql -h <RAILWAY_HOST> -P <PORT> -u <USER> -p<PASSWORD> <DB_NAME> < database/migrations/20261115_firebase_auth.sql
    mysql -h <RAILWAY_HOST> -P <PORT> -u <USER> -p<PASSWORD> <DB_NAME> < database/seed_data.sql
    ```
 

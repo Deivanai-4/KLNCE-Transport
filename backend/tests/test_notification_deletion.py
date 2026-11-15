@@ -1,7 +1,7 @@
 import unittest
+from unittest.mock import patch
 
 from flask import Flask
-from flask_jwt_extended import JWTManager, create_access_token
 
 from models import db
 from models.notification import Notification
@@ -15,12 +15,10 @@ class NotificationDeletionTests(unittest.TestCase):
         app.config.update(
             TESTING=True,
             SECRET_KEY='test-secret',
-            JWT_SECRET_KEY='test-jwt-secret-for-notification-deletion',
             SQLALCHEMY_DATABASE_URI='sqlite:///:memory:',
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(app)
-        JWTManager(app)
         app.register_blueprint(notifications_bp)
 
         self.app = app
@@ -54,21 +52,30 @@ class NotificationDeletionTests(unittest.TestCase):
         db.session.commit()
 
         self.notification_id = notification.id
-        self.admin_headers = self._authorization_headers(admin.id, 'admin')
-        self.student_headers = self._authorization_headers(student.id, 'student')
+        self.claims_by_token = {
+            'admin-token': {
+                'email': admin.email,
+                'email_verified': True,
+            },
+            'student-token': {
+                'email': student.email,
+                'email_verified': True,
+            },
+        }
+        self.firebase_verification = patch(
+            'routes.auth.verify_firebase_id_token',
+            side_effect=self.claims_by_token.__getitem__,
+        )
+        self.firebase_verification.start()
+        self.addCleanup(self.firebase_verification.stop)
+        self.admin_headers = {'Authorization': 'Bearer admin-token'}
+        self.student_headers = {'Authorization': 'Bearer student-token'}
         self.client = app.test_client()
 
     def tearDown(self):
         db.session.remove()
         db.drop_all()
         self.app_context.pop()
-
-    def _authorization_headers(self, user_id, role):
-        token = create_access_token(
-            identity=str(user_id),
-            additional_claims={'role': role},
-        )
-        return {'Authorization': f'Bearer {token}'}
 
     def test_only_admins_can_delete_alerts(self):
         path = f'/api/notifications/{self.notification_id}'

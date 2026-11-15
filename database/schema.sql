@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   name          VARCHAR(100)  NOT NULL,
   email         VARCHAR(100)  UNIQUE NOT NULL,
   phone         VARCHAR(15),
-  password_hash VARCHAR(255)  NOT NULL,
+  password_hash VARCHAR(255)  NULL COMMENT 'Legacy bcrypt hash; Firebase Auth is used for sign-in',
   role          ENUM('student','staff','admin','driver') NOT NULL DEFAULT 'student',
   college       ENUM('engineering','arts_science','both') NOT NULL DEFAULT 'engineering',
   fcm_token     VARCHAR(255)  COMMENT 'Firebase Cloud Messaging token for push notifications',

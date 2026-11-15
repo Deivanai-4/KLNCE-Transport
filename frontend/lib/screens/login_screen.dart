@@ -16,8 +16,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController(text: 'klnce@transport');
-  final _passCtrl = TextEditingController(text: '1234klnce');
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   bool _obscurePass = true;
   bool _isCheckingConnection = false;
   bool? _isServerConnected;
@@ -84,7 +84,8 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               Icon(
                 testOk == true ? Icons.cloud_done : Icons.cloud_outlined,
-                color: testOk == true ? const Color(0xFF2E7D32) : AppColors.navy,
+                color:
+                    testOk == true ? const Color(0xFF2E7D32) : AppColors.navy,
                 size: 24,
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -291,7 +292,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 12,
                                 height: 12,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : Icon(
                                 Icons.circle,
@@ -346,7 +348,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.username],
                           decoration: const InputDecoration(
                             labelText: 'College email',
-                            hintText: 'klnce@transport or name@college.edu',
+                            hintText: 'name@college.edu',
                             prefixIcon: Icon(Icons.email_outlined),
                           ),
                           validator: (value) {
@@ -393,7 +395,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFEBEE),
                               borderRadius: BorderRadius.circular(AppRadii.sm),
-                              border: Border.all(color: const Color(0xFFFFCDD2)),
+                              border:
+                                  Border.all(color: const Color(0xFFFFCDD2)),
                             ),
                             child: Row(
                               children: [

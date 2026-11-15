@@ -18,13 +18,12 @@ load_dotenv(os.path.join(backend_dir, '.env'))
 
 # Verify critical external packages with clear error messages
 try:
-    from flask_jwt_extended import JWTManager
     from flask_cors import CORS
 except ImportError as e:
     missing_pkg = e.name
     print(f"\n[KLNCE Transport ERROR] Missing required package: '{missing_pkg}'")
     print("Please install backend dependencies with:")
-    print("    pip install flask-cors flask-jwt-extended flask-sqlalchemy sqlalchemy\n")
+    print("    pip install flask-cors flask-sqlalchemy sqlalchemy\n")
     raise
 
 from models import db
@@ -47,26 +46,11 @@ def create_app(config_class=None):
 
     # Initialize Extensions
     db.init_app(app)
-    jwt = JWTManager(app)
-
-    # JWT Error handlers
-    @jwt.unauthorized_loader
-    def unauthorized_callback(callback):
-        return jsonify({'error': 'Authorization header required', 'message': callback}), 401
-
-    @jwt.invalid_token_loader
-    def invalid_token_callback(callback):
-        return jsonify({'error': 'Invalid token signature', 'message': callback}), 401
-
-    @jwt.expired_token_loader
-    def expired_token_callback(jwt_header, jwt_payload):
-        return jsonify({'error': 'Token has expired', 'message': 'Please login again'}), 401
-
     # CORS configuration for Flutter Mobile & Web
     CORS(
         app,
         resources={r"/*": {"origins": "*"}},
-        allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Headers", "Origin", "Accept", "X-Requested-With"],
+        allow_headers=["*"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     )
 
@@ -76,14 +60,14 @@ def create_app(config_class=None):
         if request.method == "OPTIONS":
             response = app.make_default_options_response()
             response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With, bypass-tunnel-reminder, *'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
             return response
 
     @app.after_request
     def after_request_cors(response):
         response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With, bypass-tunnel-reminder, *'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         return response
 
@@ -107,7 +91,7 @@ def create_app(config_class=None):
                 'health': '/api/health',
                 'published_schedule': '/api/schedules/published',
                 'search_buses': '/api/buses/search?stop=Teppakulam',
-                'login': '/api/auth/login'
+                'current_user': '/api/auth/me'
             }
         })
 

@@ -6,7 +6,6 @@ Reads all settings from environment variables (via python-dotenv).
 
 import os
 import urllib.parse
-from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load .env file explicitly from the backend directory
@@ -54,15 +53,6 @@ class BaseConfig:
         "pool_size": 5,
         "max_overflow": 10,
     }
-
-    # ------------------------------------------------------------------ #
-    # JWT                                                                  #
-    # ------------------------------------------------------------------ #
-    JWT_SECRET_KEY: str = os.environ.get("JWT_SECRET_KEY", "jwt-dev-secret-change-me")
-    JWT_ACCESS_TOKEN_EXPIRES: timedelta = timedelta(hours=24)
-    JWT_TOKEN_LOCATION: list[str] = ["headers"]
-    JWT_HEADER_NAME: str = "Authorization"
-    JWT_HEADER_TYPE: str = "Bearer"
 
     # ------------------------------------------------------------------ #
     # File Upload                                                          #
@@ -118,7 +108,6 @@ class TestingConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_ENGINE_OPTIONS = {}
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
 
 
 _CONFIG_MAP: dict[str, type] = {

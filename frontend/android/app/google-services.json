@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "825226484631",
+    "project_id": "klnce-transport",
+    "storage_bucket": "klnce-transport.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:825226484631:android:a3f498a59392ca851a02d2",
+        "android_client_info": {
+          "package_name": "com.klnce.transport"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "825226484631-r4mr49edaajp9oqfjr46g21443bl8usa.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYgYuofFZApiwktW5VorDBdQx7jY10-J0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "825226484631-r4mr49edaajp9oqfjr46g21443bl8usa.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

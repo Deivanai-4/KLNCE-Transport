@@ -4,11 +4,10 @@ Notification broadcasting routes for FCM push alerts and SMS dispatches.
 
 from datetime import datetime
 from flask import Blueprint, current_app, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db
 from models.user import User
 from models.notification import Notification
-from routes.auth import admin_required
+from routes.auth import admin_required, get_authenticated_user
 from services.firebase_service import send_notification_to_all
 from services.sms_service import send_bulk_sms
 
@@ -37,7 +36,7 @@ def send_notification():
     if not title or not body:
         return jsonify({'error': 'Title and body are required'}), 400
 
-    admin_id = int(get_jwt_identity())
+    admin_id = get_authenticated_user().id
 
     # 1. Send FCM Broadcast
     fcm_recipients = send_notification_to_all(title=title, body=body, data={'type': notif_type})

@@ -20,6 +20,7 @@ class AppConfig {
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
       final saved = prefs.getString(keyCustomApiUrl);
       if (saved != null && saved.trim().isNotEmpty) {
         _customProductionUrl = saved.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -67,7 +68,6 @@ class AppConfig {
   static const int offlineSyncIntervalMinutes = 30;
 
   // ─── SharedPreferences Keys ───────────────────────────────────────────────
-  static const String keyAuthToken = 'auth_token';
   static const String keyLastSync = 'last_sync_time';
   static const String keyCachedSchedule = 'klnce_offline_schedule';
 

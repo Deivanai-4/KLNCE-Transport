@@ -31,8 +31,9 @@ A unified smart transport and college bus management platform for **K.L.N. Colle
 | Layer | Technology | Purpose |
 |:---|:---|:---|
 | **Mobile & Web Frontend** | Flutter + Dart (v3.0+) | Cross-platform student mobile app & admin web dashboard |
-| **Backend API** | Python 3.11 + Flask 3.0 | Business logic, authentication, and REST API |
+| **Backend API** | Python 3.11 + Flask 3.0 | Business logic, Firebase token verification, and REST API |
 | **Database** | MySQL 8.0 (UTF8MB4) | Relational storage for users, schedules, routes, stops, and GPS logs |
+| **Authentication** | Firebase Authentication | Email/password sign-in and Firebase ID tokens |
 | **Mobile Offline Cache** | SQLite (`sqflite`) | Offline timetable search and viewing on mobile devices |
 | **OCR Engine** | PaddleOCR & OpenCV / Tesseract | Bilingual Tamil + English table text extraction |
 | **Push Notifications** | Firebase Cloud Messaging (FCM) | Real-time push alerts to mobile phones |
@@ -47,6 +48,9 @@ A unified smart transport and college bus management platform for **K.L.N. Colle
 ```bash
 # Create database and tables
 mysql -u root -p < database/schema.sql
+
+# Existing installations must also apply the Firebase auth schema migration:
+mysql -u root -p klnce_transport < database/migrations/20261115_firebase_auth.sql
 
 # Seed catalog of 48 stops and Nov 10 bus schedule
 mysql -u root -p klnce_transport < database/seed_data.sql
@@ -69,6 +73,7 @@ pip install -r requirements.txt
 # Copy environment variables
 cp .env.example .env
 # Edit .env with your MySQL credentials
+# Set FIREBASE_CREDENTIALS to the Firebase service-account JSON for this project
 
 # Run development server
 python app.py
@@ -76,6 +81,20 @@ python app.py
 ```
 
 ### 3. Frontend Setup (Flutter)
+Enable Email/Password sign-in in Firebase Authentication and register Android
+and Web apps in the Firebase project. Configure the app's public Firebase values
+(`FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`,
+`FIREBASE_PROJECT_ID`, and `FIREBASE_AUTH_DOMAIN` for Web) as build-time Dart
+defines. These are Firebase client configuration values, not service-account
+secrets.
+
+The backend verifies ID tokens using the Firebase service-account JSON in
+`FIREBASE_CREDENTIALS`. Transport users must have an active row in the `users`
+table whose email exactly matches their verified Firebase email; the database
+role remains authoritative. Create Firebase accounts and verify their email
+before linking profiles. Use `backend/set_admin_profile.py` for administrator
+profiles.
+
 ```bash
 cd frontend
 
@@ -83,10 +102,10 @@ cd frontend
 flutter pub get
 
 # Run on Chrome (Admin Web Dashboard)
-flutter run -d chrome
+flutter run -d chrome --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api --dart-define=FIREBASE_API_KEY=YOUR_API_KEY --dart-define=FIREBASE_APP_ID=YOUR_WEB_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID --dart-define=FIREBASE_PROJECT_ID=YOUR_PROJECT_ID --dart-define=FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
 
 # Run on an Android emulator (Student App)
-flutter run -d <emulator-device-id> --dart-define=API_BASE_URL=http://10.0.2.2:5000/api
+flutter run -d <emulator-device-id> --dart-define=API_BASE_URL=http://10.0.2.2:5000/api --dart-define=FIREBASE_API_KEY=YOUR_API_KEY --dart-define=FIREBASE_APP_ID=YOUR_ANDROID_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID --dart-define=FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
 ```
 
 ### Mobile Network / Production API
@@ -99,7 +118,7 @@ with Vercel continuing to host the Flutter web dashboard.
 2. Deploy the `backend` directory as a web service. Its `Procfile` starts
    Gunicorn and binds to Railway's assigned port.
 3. Set the web service variables `FLASK_ENV=production`, `DB_HOST`, `DB_PORT`,
-   `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SECRET_KEY`, and `JWT_SECRET_KEY`
+   `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SECRET_KEY`, and `FIREBASE_CREDENTIALS`
    using values from your MySQL service. Keep secrets in Railway's environment
    settings; do not commit them.
 4. Load `database/schema.sql` and `database/seed_data.sql` into the hosted
@@ -111,16 +130,18 @@ https://YOUR_BACKEND_HOST/api/health
 ```
 
 Set the Vercel project environment variable `API_BASE_URL` to
-`https://YOUR_BACKEND_HOST/api` for every environment you deploy. The Vercel
-build now passes this URL into Flutter and fails clearly if it is missing.
+`https://YOUR_BACKEND_HOST/api` and set the Firebase client configuration
+variables documented above for every environment you deploy. The Vercel build
+passes these values into Flutter and fails clearly if a required value is
+missing.
 
 For Android, provide the same API base URL (including `/api`) when running or
 building the app:
 
 ```bash
 cd frontend
-flutter run -d <device-id> --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api
-flutter build apk --release --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api
+flutter run -d <device-id> --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api --dart-define=FIREBASE_API_KEY=YOUR_API_KEY --dart-define=FIREBASE_APP_ID=YOUR_ANDROID_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID --dart-define=FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+flutter build apk --release --dart-define=API_BASE_URL=https://YOUR_BACKEND_HOST/api --dart-define=FIREBASE_API_KEY=YOUR_API_KEY --dart-define=FIREBASE_APP_ID=YOUR_ANDROID_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID --dart-define=FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
 ```
 
 Flutter web debug defaults to the local backend. Android builds require an

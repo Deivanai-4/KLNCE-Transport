@@ -4,10 +4,9 @@ GPS Live Tracking routes for driver location reporting and student live tracking
 
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db
 from models.gps_location import GpsLocation
-from routes.auth import driver_or_admin_required
+from routes.auth import driver_or_admin_required, get_authenticated_user
 
 gps_bp = Blueprint('gps_bp', __name__, url_prefix='/api/gps')
 
@@ -34,7 +33,7 @@ def update_gps_location():
     if not bus_code or lat is None or lng is None:
         return jsonify({'error': 'bus_code, latitude, and longitude are required'}), 400
 
-    driver_id = int(get_jwt_identity())
+    driver_id = get_authenticated_user().id
 
     gps_entry = GpsLocation(
         bus_code=bus_code,

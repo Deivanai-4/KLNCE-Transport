@@ -7,8 +7,8 @@
 USE klnce_transport;
 
 -- ------------------------------------------------------------
--- No demo users are seeded. Create or update an administrator securely with
--- backend/set_admin_credentials.py after configuring backend/.env.
+-- No demo users are seeded. Create Firebase Auth accounts first, then link
+-- administrator accounts with backend/set_admin_profile.py.
 
 -- ------------------------------------------------------------
 -- 1. Master Stops Catalog (All 48 Madurai area bus stops)

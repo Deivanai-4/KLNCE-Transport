@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 
 class ApiException implements Exception {
@@ -44,9 +44,13 @@ class ApiService {
         : AppConfig.apiBaseUrl;
     try {
       final healthUri = Uri.parse('$testUrl/health');
-      final res = await http.get(healthUri, headers: const {
-        'bypass-tunnel-reminder': '1',
-      }).timeout(const Duration(seconds: 5));
+      final healthHeaders = <String, String>{};
+      if (testUrl.contains('loca.lt')) {
+        healthHeaders['bypass-tunnel-reminder'] = '1';
+      }
+      final res = await http
+          .get(healthUri, headers: healthHeaders)
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         _activeFallbackUrl = null;
         return true;
@@ -79,12 +83,12 @@ class ApiService {
   }
 
   static Future<Map<String, String>> _getHeaders({bool isJson = true}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
 
-    final headers = <String, String>{
-      'bypass-tunnel-reminder': '1',
-    };
+    final headers = <String, String>{};
+    if (baseUrl.contains('loca.lt')) {
+      headers['bypass-tunnel-reminder'] = '1';
+    }
     if (isJson) {
       headers['Content-Type'] = 'application/json';
     }
@@ -159,9 +163,11 @@ class ApiService {
     final uri = _uriFor(endpoint);
     final request = http.MultipartRequest('POST', uri);
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    if (token != null) {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (baseUrl.contains('loca.lt')) {
+      request.headers['bypass-tunnel-reminder'] = '1';
+    }
+    if (token != null && token.isNotEmpty) {
       request.headers['Authorization'] = 'Bearer $token';
     }
 

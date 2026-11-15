@@ -6,12 +6,11 @@ import os
 import base64
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_from_directory, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db
 from models.schedule import ScheduleDocument
 from models.bus_route import BusRoute
 from models.route_stop import RouteStop
-from routes.auth import admin_required
+from routes.auth import admin_required, get_authenticated_user
 from services.schedule_visibility import (
     is_trip_visible,
     ist_now,
@@ -185,7 +184,7 @@ def create_manual_schedule():
         college=college,
         effective_date=effective_date,
         status='draft',
-        created_by=int(get_jwt_identity()),
+        created_by=get_authenticated_user().id,
     )
     db.session.add(schedule)
 
@@ -280,7 +279,7 @@ def upload_and_extract_schedule():
 
     ext = os.path.splitext(original_filename)[1].lower()
     file_type = 'pdf' if ext == '.pdf' else 'image'
-    admin_id = int(get_jwt_identity())
+    admin_id = get_authenticated_user().id
 
     # Create Draft Schedule Document
     schedule = ScheduleDocument(
@@ -421,7 +420,7 @@ def publish_schedule(schedule_id: int):
     if not schedule:
         return jsonify({'error': 'Schedule not found'}), 404
 
-    admin_id = int(get_jwt_identity())
+    admin_id = get_authenticated_user().id
 
     # Archive previous published schedule for the same direction and college
     ScheduleDocument.query.filter(
