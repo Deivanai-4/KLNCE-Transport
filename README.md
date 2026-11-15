@@ -139,8 +139,4 @@ configuration error if `API_BASE_URL` is missing.
 
 ---
 
-## 📞 College Transport Department Contact
-- **Transport In-charge:** Mr. Manikandan
-- **Helpline Phone:** +91 9894927500
-- **Institution:** K.L.N. College of Engineering, Pottapalayam, Sivagangai District / Madurai, Tamil Nadu - 630612.
 
