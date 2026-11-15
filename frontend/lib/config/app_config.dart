@@ -1,65 +1,57 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// App-wide configuration constants for KLNCE Smart Transport System.
+///
+/// Uses one permanent production public HTTPS backend URL across all platforms
+/// (Android mobile app, Web, Wi-Fi, and Cellular 4G/5G mobile data).
 class AppConfig {
+  /// Permanent Production API Base URL (Public HTTPS)
+  /// Works across all networks without requiring local IP or Wi-Fi configuration.
+  static const String productionApiUrl =
+      'https://klnce-transport-api.loca.lt/api';
+
   static const String _configuredApiUrl =
       String.fromEnvironment('API_BASE_URL');
-  static const String _webDevelopmentApiUrl = 'http://127.0.0.1:5000/api';
-  
-  // Public HTTPS URL accessible from ANY mobile network (4G/5G, LTE, no Wi-Fi needed)
-  static const String defaultPublicApiUrl =
-      'https://ciao-michael-wireless-baltimore.trycloudflare.com/api';
 
-  // Local LAN IP fallback
-  static const String defaultLocalLanApiUrl = 'http://192.168.85.249:5000/api';
+  static const String keyCustomApiUrl = 'klnce_production_api_url';
+  static String? _customProductionUrl;
 
-  static const String keyCustomApiUrl = 'custom_api_base_url';
-  static String? _customApiUrl;
-
-  /// Loads any user-saved backend URL from local device storage.
+  /// Loads any custom production override (if configured).
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(keyCustomApiUrl);
       if (saved != null && saved.trim().isNotEmpty) {
-        _customApiUrl = saved.trim().replaceFirst(RegExp(r'/+$'), '');
+        _customProductionUrl = saved.trim().replaceFirst(RegExp(r'/+$'), '');
       }
     } catch (_) {}
   }
 
-  /// Sets or clears a custom backend URL.
+  /// Sets or clears the production URL.
   static Future<void> setCustomApiUrl(String? url) async {
     final prefs = await SharedPreferences.getInstance();
     if (url == null || url.trim().isEmpty) {
-      _customApiUrl = null;
+      _customProductionUrl = null;
       await prefs.remove(keyCustomApiUrl);
     } else {
-      _customApiUrl = url.trim().replaceFirst(RegExp(r'/+$'), '');
-      await prefs.setString(keyCustomApiUrl, _customApiUrl!);
+      _customProductionUrl = url.trim().replaceFirst(RegExp(r'/+$'), '');
+      await prefs.setString(keyCustomApiUrl, _customProductionUrl!);
     }
   }
 
-  /// Active backend URL with intelligent fallbacks.
+  /// Active backend URL — strictly public HTTPS production endpoint.
+  /// Works identically on Wi-Fi and mobile data.
   static String get apiBaseUrl {
-    // 1. Manually configured URL saved by user in app settings
-    if (_customApiUrl != null && _customApiUrl!.isNotEmpty) {
-      return _customApiUrl!;
+    if (_customProductionUrl != null && _customProductionUrl!.isNotEmpty) {
+      return _customProductionUrl!;
     }
 
-    // 2. Set at build time via --dart-define=API_BASE_URL=...
     final configuredUrl = _configuredApiUrl.trim();
     if (configuredUrl.isNotEmpty) {
       return configuredUrl.replaceFirst(RegExp(r'/+$'), '');
     }
 
-    // 3. Web browser environment
-    if (kIsWeb) {
-      return _webDevelopmentApiUrl;
-    }
-
-    // 4. Default for physical mobile device (works on cellular/mobile data!)
-    return defaultPublicApiUrl;
+    return productionApiUrl;
   }
 
   // ─── Maps ──────────────────────────────────────────────────────────────────

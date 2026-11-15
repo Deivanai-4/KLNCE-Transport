@@ -68,17 +68,16 @@ class AuthService extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
-    } on http.ClientException catch (e) {
-      debugPrint('Login request could not reach the backend: ${e.message}');
-      _errorMessage = 'Cannot reach the backend. On Wi-Fi, set API_BASE_URL '
-          'to your computer’s LAN IP and keep the backend running; on cellular, '
-          'use a public HTTPS backend URL.';
+    } on http.ClientException {
+      _errorMessage =
+          'Unable to connect to the transport server. Please check your internet connection.';
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
       debugPrint('Unexpected login error: $e');
-      _errorMessage = 'Sign-in failed unexpectedly. Please try again.';
+      _errorMessage =
+          'Unable to connect to the transport server. Please check your internet connection.';
       _isLoading = false;
       notifyListeners();
       return false;

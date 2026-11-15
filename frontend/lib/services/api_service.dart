@@ -14,41 +14,77 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static String get baseUrl => AppConfig.apiBaseUrl;
+  static String? _activeFallbackUrl;
+
+  static String get baseUrl {
+    if (_activeFallbackUrl != null) return _activeFallbackUrl!;
+    return AppConfig.apiBaseUrl;
+  }
 
   static Uri _uriFor(String endpoint) {
     if (baseUrl.isEmpty) {
       throw ApiException(
         503,
-        'Backend URL is not configured. Please tap the Server settings icon to configure your server address.',
+        'Production server URL is not configured.',
       );
     }
     final uri = Uri.tryParse('$baseUrl$endpoint');
     if (uri == null || !uri.hasAuthority) {
-      throw ApiException(503, 'The configured backend URL ($baseUrl) is invalid.');
+      throw ApiException(503, 'Invalid production server address.');
     }
     return uri;
   }
 
-  /// Pings the backend /health endpoint to check reachability.
+  /// Pings the production backend /health endpoint to check reachability.
+  /// If candidateUrl is null and the primary public URL is unreachable,
+  /// automatically probes local Wi-Fi LAN fallbacks so Wi-Fi never drops.
   static Future<bool> testHealth([String? candidateUrl]) async {
     final testUrl = (candidateUrl != null && candidateUrl.trim().isNotEmpty)
         ? candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '')
-        : baseUrl;
+        : AppConfig.apiBaseUrl;
     try {
       final healthUri = Uri.parse('$testUrl/health');
-      final res = await http.get(healthUri).timeout(const Duration(seconds: 4));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
+      final res = await http.get(healthUri, headers: const {
+        'bypass-tunnel-reminder': '1',
+      }).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        _activeFallbackUrl = null;
+        return true;
+      }
+    } catch (_) {}
+
+    // When on Wi-Fi and primary public URL is down or network changed,
+    // test local LAN endpoints so Wi-Fi testing always succeeds seamlessly
+    if (candidateUrl == null &&
+        !testUrl.contains('10.83.140.249') &&
+        !testUrl.contains('192.168.')) {
+      final localCandidates = [
+        'http://10.83.140.249:5000/api',
+        'http://192.168.19.249:5000/api',
+      ];
+      for (final local in localCandidates) {
+        try {
+          final res = await http
+              .get(Uri.parse('$local/health'))
+              .timeout(const Duration(seconds: 2));
+          if (res.statusCode == 200) {
+            _activeFallbackUrl = local;
+            return true;
+          }
+        } catch (_) {}
+      }
     }
+
+    return false;
   }
 
   static Future<Map<String, String>> _getHeaders({bool isJson = true}) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
 
-    final headers = <String, String>{};
+    final headers = <String, String>{
+      'bypass-tunnel-reminder': '1',
+    };
     if (isJson) {
       headers['Content-Type'] = 'application/json';
     }

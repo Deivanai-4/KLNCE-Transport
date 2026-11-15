@@ -19,13 +19,30 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController(text: 'klnce@transport');
   final _passCtrl = TextEditingController(text: '1234klnce');
   bool _obscurePass = true;
-  String _currentServerUrl = AppConfig.apiBaseUrl;
+  bool _isCheckingConnection = false;
+  bool? _isServerConnected;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkServerAvailability();
+  }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  /// Silently checks backend availability on screen load
+  Future<void> _checkServerAvailability() async {
+    final ok = await ApiService.testHealth();
+    if (mounted) {
+      setState(() {
+        _isServerConnected = ok;
+      });
+    }
   }
 
   Future<void> _login() async {
@@ -50,185 +67,185 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _showServerConfigDialog() {
-    final controller = TextEditingController(text: _currentServerUrl);
-    String? testResult;
+  /// Clean dialog to test connection to the Production Server
+  void _showTestConnectionDialog() {
+    final urlCtrl = TextEditingController(text: AppConfig.apiBaseUrl);
     bool isTesting = false;
+    bool? testOk = _isServerConnected;
 
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.lg)),
-      ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            top: AppSpacing.lg,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.xl,
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          title: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Server Configuration',
-                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
+              Icon(
+                testOk == true ? Icons.cloud_done : Icons.cloud_outlined,
+                color: testOk == true ? const Color(0xFF2E7D32) : AppColors.navy,
+                size: 24,
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Point the app to your laptop backend. Ensure your phone and laptop are on the same Wi-Fi.',
-                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'Backend API URL',
-                  hintText: 'http://192.168.x.x:5000/api',
-                  prefixIcon: Icon(Icons.dns_outlined),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  ActionChip(
-                    avatar: const Icon(Icons.signal_cellular_alt, size: 14, color: AppColors.emerald),
-                    label: const Text('Mobile Data (Cloudflare)'),
-                    onPressed: () {
-                      setModalState(() {
-                        controller.text = AppConfig.defaultPublicApiUrl;
-                        testResult = null;
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('Wi-Fi (192.168.85.249)'),
-                    onPressed: () {
-                      setModalState(() {
-                        controller.text = 'http://192.168.85.249:5000/api';
-                        testResult = null;
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('USB Cable (localhost)'),
-                    onPressed: () {
-                      setModalState(() {
-                        controller.text = 'http://127.0.0.1:5000/api';
-                        testResult = null;
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('Emulator (10.0.2.2)'),
-                    onPressed: () {
-                      setModalState(() {
-                        controller.text = 'http://10.0.2.2:5000/api';
-                        testResult = null;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (testResult != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: testResult!.startsWith('✅')
-                        ? const Color(0xFFE8F5E9)
-                        : const Color(0xFFFFEBEE),
-                    borderRadius: BorderRadius.circular(AppRadii.sm),
-                  ),
-                  child: Text(
-                    testResult!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: testResult!.startsWith('✅')
-                          ? const Color(0xFF2E7D32)
-                          : const Color(0xFFC62828),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: isTesting
-                          ? null
-                          : () async {
-                              setModalState(() {
-                                isTesting = true;
-                                testResult = null;
-                              });
-                              final ok = await ApiService.testHealth(
-                                controller.text.trim(),
-                              );
-                              setModalState(() {
-                                isTesting = false;
-                                testResult = ok
-                                    ? '✅ Connected to KLNCE Backend successfully!'
-                                    : '❌ Cannot reach backend at ${controller.text.trim()}. Check IP or Wi-Fi.';
-                              });
-                            },
-                      child: isTesting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Test Ping'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final newUrl = controller.text.trim();
-                        await AppConfig.setCustomApiUrl(newUrl);
-                        setState(() {
-                          _currentServerUrl = AppConfig.apiBaseUrl;
-                        });
-                        if (mounted) {
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Server set to: ${AppConfig.apiBaseUrl}'),
-                              backgroundColor: AppColors.emerald,
-                            ),
-                          );
-                        }
-                      },
-                      child: const Text('Save & Apply'),
-                    ),
-                  ),
-                ],
+              const SizedBox(width: AppSpacing.sm),
+              const Text(
+                'Server Status',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
           ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Production Server URL',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'https://your-server.com/api',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.restore, size: 18),
+                      tooltip: 'Reset to default',
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.productionApiUrl;
+                        });
+                      },
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.sm,
+                    horizontal: AppSpacing.md,
+                  ),
+                  decoration: BoxDecoration(
+                    color: testOk == null
+                        ? AppColors.surface
+                        : (testOk!
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFFFEBEE)),
+                    borderRadius: BorderRadius.circular(AppRadii.sm),
+                    border: Border.all(
+                      color: testOk == null
+                          ? Colors.black12
+                          : (testOk!
+                              ? const Color(0xFFA5D6A7)
+                              : const Color(0xFFFFCDD2)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        testOk == null
+                            ? Icons.help_outline
+                            : (testOk!
+                                ? Icons.check_circle
+                                : Icons.cancel_outlined),
+                        size: 20,
+                        color: testOk == null
+                            ? AppColors.textSecondary
+                            : (testOk!
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFFC62828)),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          testOk == null
+                              ? 'Tap Test Connection to verify'
+                              : (testOk!
+                                  ? 'Connected: Production server is online'
+                                  : 'Connection Failed: Server is unreachable'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: testOk == null
+                                ? AppColors.textSecondary
+                                : (testOk!
+                                    ? const Color(0xFF2E7D32)
+                                    : const Color(0xFFC62828)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            OutlinedButton.icon(
+              onPressed: isTesting
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        isTesting = true;
+                      });
+                      final ok =
+                          await ApiService.testHealth(urlCtrl.text.trim());
+                      setDialogState(() {
+                        isTesting = false;
+                        testOk = ok;
+                      });
+                      if (mounted) {
+                        setState(() {
+                          _isServerConnected = ok;
+                        });
+                      }
+                    },
+              icon: isTesting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.refresh, size: 16),
+              label: Text(isTesting ? 'Testing...' : 'Test Connection'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newUrl = urlCtrl.text.trim();
+                if (newUrl.isNotEmpty) {
+                  await AppConfig.setCustomApiUrl(newUrl);
+                } else {
+                  await AppConfig.setCustomApiUrl(null);
+                }
+                final ok = await ApiService.testHealth();
+                if (mounted) {
+                  setState(() {
+                    _isServerConnected = ok;
+                  });
+                }
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
       ),
     );
@@ -253,10 +270,54 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       KlnceBrandLockup(onTap: _browseSchedules),
-                      IconButton(
-                        tooltip: 'Configure Backend Server',
-                        icon: const Icon(Icons.settings_outlined, color: AppColors.navy),
-                        onPressed: _showServerConfigDialog,
+                      // Clean Test Connection Button (replaces complicated dev settings)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          backgroundColor: _isServerConnected == true
+                              ? const Color(0xFFE8F5E9)
+                              : (_isServerConnected == false
+                                  ? const Color(0xFFFFEBEE)
+                                  : Colors.black.withValues(alpha: 0.04)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        onPressed: _showTestConnectionDialog,
+                        icon: _isCheckingConnection
+                            ? const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                Icons.circle,
+                                size: 10,
+                                color: _isServerConnected == true
+                                    ? const Color(0xFF2E7D32)
+                                    : (_isServerConnected == false
+                                        ? const Color(0xFFC62828)
+                                        : AppColors.textSecondary),
+                              ),
+                        label: Text(
+                          _isServerConnected == true
+                              ? 'Connected'
+                              : (_isServerConnected == false
+                                  ? 'Connection Failed'
+                                  : 'Test Connection'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _isServerConnected == true
+                                ? const Color(0xFF2E7D32)
+                                : (_isServerConnected == false
+                                    ? const Color(0xFFC62828)
+                                    : AppColors.textPrimary),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -378,37 +439,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _browseSchedules,
                     child: const Text('Browse schedules without signing in'),
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  InkWell(
-                    onTap: _showServerConfigDialog,
-                    borderRadius: BorderRadius.circular(AppRadii.sm),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xs,
-                        horizontal: AppSpacing.sm,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.wifi_tethering,
-                              size: 14, color: AppColors.textSecondary),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Backend: $_currentServerUrl',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.edit,
-                              size: 12, color: AppColors.textSecondary),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.lg),
                   Text(
                     'Account access is managed by the college transport office.',
                     textAlign: TextAlign.center,
