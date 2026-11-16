@@ -112,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: urlCtrl,
                   decoration: InputDecoration(
-                    hintText: 'https://your-server.com/api',
+                    hintText: AppConfig.defaultApiUrl,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -123,12 +123,51 @@ class _LoginScreenState extends State<LoginScreen> {
                       tooltip: 'Reset to default',
                       onPressed: () {
                         setDialogState(() {
-                          urlCtrl.text = AppConfig.productionApiUrl;
+                          urlCtrl.text = AppConfig.defaultApiUrl;
                         });
                       },
                     ),
                   ),
                   style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    ActionChip(
+                      label: const Text('Public Tunnel', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.publicTunnelUrl;
+                        });
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('Wi-Fi LAN', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.localWifiUrl;
+                        });
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('Emulator', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.emulatorUrl;
+                        });
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('Localhost', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.webLocalhostUrl;
+                        });
+                      },
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Container(

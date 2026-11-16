@@ -21,13 +21,12 @@ class ApiService {
   static String? _cachedToken;
   static String? _activeFallbackUrl;
 
-  /// Candidate local LAN endpoints to seamlessly fallback to when on the same Wi-Fi
+  /// Candidate local LAN & direct endpoints to seamlessly fallback to
   static const List<String> _lanCandidates = [
-    'http://10.37.38.249:5000/api',
-    'http://192.168.90.249:5000/api',
-    'http://10.83.140.249:5000/api',
-    'http://10.0.2.2:5000/api',
-    'http://127.0.0.1:5000/api',
+    'https://klnce-transport-api.loca.lt/api', // Localtunnel active public endpoint
+    'http://192.168.110.249:5000/api',         // Current laptop Wi-Fi LAN IP
+    'http://10.0.2.2:5000/api',                // Android emulator host alias
+    'http://127.0.0.1:5000/api',               // Web & USB cable (adb reverse)
   ];
 
   // ── Token management ──────────────────────────────────────────────────────
@@ -67,11 +66,11 @@ class ApiService {
   static Uri _uriFor(String endpoint, [String? overrideBaseUrl]) {
     final effectiveBase = overrideBaseUrl ?? baseUrl;
     if (effectiveBase.isEmpty) {
-      throw ApiException(503, 'Production server URL is not configured.');
+      throw ApiException(503, 'Server URL is not configured.');
     }
     final uri = Uri.tryParse('$effectiveBase$endpoint');
     if (uri == null || !uri.hasAuthority) {
-      throw ApiException(503, 'Invalid production server address.');
+      throw ApiException(503, 'Invalid server address ($effectiveBase).');
     }
     return uri;
   }
@@ -79,11 +78,11 @@ class ApiService {
   // ── Health Check ──────────────────────────────────────────────────────────
 
   /// Ping /health to check reachability.
-  /// If primary URL fails, automatically probes local LAN candidates so Wi-Fi never drops.
+  /// If primary URL fails, automatically probes candidate endpoints so connections never drop.
   static Future<bool> testHealth([String? candidateUrl]) async {
     final testUrl = (candidateUrl != null && candidateUrl.trim().isNotEmpty)
         ? candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '')
-        : AppConfig.apiBaseUrl;
+        : baseUrl;
 
     try {
       final healthUri = Uri.parse('$testUrl/health');
@@ -93,25 +92,27 @@ class ApiService {
       }
       final res = await http
           .get(healthUri, headers: headers)
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
-        _activeFallbackUrl = null;
+        if (candidateUrl == null && _activeFallbackUrl != null && _activeFallbackUrl != testUrl) {
+          _activeFallbackUrl = null;
+        }
         return true;
       }
     } catch (_) {}
 
-    // If explicit candidateUrl was provided, don't probe fallback LAN endpoints
+    // If explicit candidateUrl was tested by user, don't auto-probe alternatives
     if (candidateUrl != null) return false;
 
-    // Automatic Wi-Fi fallback: probe LAN candidates
+    // Automatic Wi-Fi / LAN fallback: probe candidates
     for (final lan in _lanCandidates) {
       if (testUrl == lan) continue;
       try {
         final res = await http
             .get(Uri.parse('$lan/health'))
-            .timeout(const Duration(milliseconds: 1800));
+            .timeout(const Duration(milliseconds: 1500));
         if (res.statusCode == 200) {
-          debugPrint('[ApiService] Seamlessly switched to local Wi-Fi fallback: $lan');
+          debugPrint('[ApiService] Successfully connected to endpoint: $lan');
           _activeFallbackUrl = lan;
           return true;
         }
@@ -148,7 +149,14 @@ class ApiService {
     Future<http.Response> Function(String effectiveBase) sendRequest,
   ) async {
     try {
-      return await sendRequest(baseUrl);
+      final res = await sendRequest(baseUrl);
+      // Treat 502/503 or localtunnel 403 rate-limits as network drops to trigger seamless fallback!
+      if (res.statusCode == 502 ||
+          res.statusCode == 503 ||
+          (baseUrl.contains('loca.lt') && res.statusCode == 403)) {
+        throw http.ClientException('Tunnel returned ${res.statusCode}');
+      }
+      return res;
     } catch (e) {
       final isNetworkIssue = e is SocketException ||
           e is http.ClientException ||
@@ -156,20 +164,24 @@ class ApiService {
 
       if (!isNetworkIssue) rethrow;
 
-      // Primary failed; if we haven't already fallen back, check LAN candidates
-      if (_activeFallbackUrl == null) {
-        for (final lan in _lanCandidates) {
-          try {
-            final check = await http
-                .get(Uri.parse('$lan/health'))
-                .timeout(const Duration(milliseconds: 1500));
-            if (check.statusCode == 200) {
-              debugPrint('[ApiService] Primary server unreachable. Routed request to: $lan');
-              _activeFallbackUrl = lan;
-              return await sendRequest(lan);
+      // Primary failed or tunnel returned error; test candidate endpoints
+      for (final lan in _lanCandidates) {
+        if (lan == baseUrl) continue;
+        try {
+          final check = await http
+              .get(Uri.parse('$lan/health'))
+              .timeout(const Duration(milliseconds: 1500));
+          if (check.statusCode == 200) {
+            debugPrint('[ApiService] Primary unreachable. Routed request to: $lan');
+            _activeFallbackUrl = lan;
+            final retryRes = await sendRequest(lan);
+            if (retryRes.statusCode != 502 &&
+                retryRes.statusCode != 503 &&
+                !(lan.contains('loca.lt') && retryRes.statusCode == 403)) {
+              return retryRes;
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
       }
 
       throw ApiException(
