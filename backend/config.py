@@ -28,31 +28,10 @@ class BaseConfig:
     TESTING: bool = False
 
     # ------------------------------------------------------------------ #
-    # Database                                                             #
+    # MongoDB Database                                                     #
     # ------------------------------------------------------------------ #
-    DB_HOST: str = os.environ.get("DB_HOST", "localhost")
-    DB_PORT: int = int(os.environ.get("DB_PORT", 3306))
-    DB_USER: str = os.environ.get("DB_USER", "root")
-    DB_PASSWORD: str = os.environ.get("DB_PASSWORD", "")
-    DB_NAME: str = os.environ.get("DB_NAME", "klnce_transport")
-
-    # SQLAlchemy connection string — uses PyMySQL as the driver.
-    # Note: DB_PASSWORD is URL-encoded with quote_plus to safely support special characters like '&'
-    SQLALCHEMY_DATABASE_URI: str = (
-        f"mysql+pymysql://{os.environ.get('DB_USER', 'root')}:"
-        f"{urllib.parse.quote_plus(os.environ.get('DB_PASSWORD', ''))}@"
-        f"{os.environ.get('DB_HOST', '127.0.0.1')}:"
-        f"{os.environ.get('DB_PORT', 3306)}/"
-        f"{os.environ.get('DB_NAME', 'klnce_transport')}"
-        "?charset=utf8mb4"
-    )
-    SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
-    SQLALCHEMY_ENGINE_OPTIONS: dict = {
-        "pool_recycle": 280,
-        "pool_pre_ping": True,
-        "pool_size": 5,
-        "max_overflow": 10,
-    }
+    MONGODB_URI: str = os.environ.get("MONGODB_URI", "")
+    MONGODB_DATABASE: str = os.environ.get("MONGODB_DATABASE", "klnce_transport")
 
     # ------------------------------------------------------------------ #
     # File Upload                                                          #
@@ -94,20 +73,13 @@ class DevelopmentConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     DEBUG = False
-    # Tighten pool settings for production
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_recycle": 280,
-        "pool_pre_ping": True,
-        "pool_size": 10,
-        "max_overflow": 20,
-    }
 
 
 class TestingConfig(BaseConfig):
     TESTING = True
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    SQLALCHEMY_ENGINE_OPTIONS = {}
+    # Isolated test MongoDB database — never touches production
+    MONGODB_DATABASE: str = "klnce_transport_test"
 
 
 _CONFIG_MAP: dict[str, type] = {

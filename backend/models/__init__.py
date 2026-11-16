@@ -1,9 +1,23 @@
 """
-models/__init__.py — SQLAlchemy db instance.
+models/__init__.py — PyMongo database exports.
 
-Import `db` from here everywhere in the application.
+Exports:
+  - init_db
+  - get_db
+  - get_mongo_client
+  - get_next_sequence
+  - db (lazy attribute resolving to get_db())
 """
 
-from flask_sqlalchemy import SQLAlchemy
+from models.database import (
+    init_db,
+    get_db,
+    get_mongo_client,
+    get_next_sequence,
+)
 
-db = SQLAlchemy()
+
+def __getattr__(name):
+    if name == 'db':
+        return get_db()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

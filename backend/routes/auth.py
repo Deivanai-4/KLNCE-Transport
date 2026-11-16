@@ -1,6 +1,6 @@
 """
 Authentication Endpoints — email + password login with JWT tokens.
-No Firebase Admin SDK required. Firebase on the client side is optional.
+PyMongo / MongoDB Atlas backed.
 """
 
 from functools import wraps
@@ -9,14 +9,12 @@ import bcrypt
 from flask import Blueprint, current_app, g, jsonify, request
 from flask_jwt_extended import (
     create_access_token,
-    decode_token,
     get_jwt_identity,
     jwt_required,
     verify_jwt_in_request,
 )
-from sqlalchemy.exc import SQLAlchemyError
+from pymongo.errors import PyMongoError
 
-from models import db
 from models.user import User
 
 auth_bp = Blueprint('auth_bp', __name__, url_prefix='/api/auth')
@@ -47,7 +45,7 @@ def jwt_auth_required(fn):
         email = get_jwt_identity()
         try:
             user = User.find_by_email(email)
-        except SQLAlchemyError:
+        except PyMongoError:
             current_app.logger.exception('DB error loading user from JWT')
             return jsonify({'error': 'Could not load user profile'}), 500
 
@@ -106,7 +104,7 @@ def login():
 
     try:
         user = User.find_by_email(email)
-    except SQLAlchemyError:
+    except PyMongoError:
         current_app.logger.exception('DB error during login')
         return jsonify({'error': 'Database error. Please try again.'}), 500
 
@@ -141,5 +139,5 @@ def update_fcm_token():
         return jsonify({'error': 'FCM token must be a string'}), 400
 
     user.fcm_token = fcm_token.strip()
-    db.session.commit()
+    user.save()
     return jsonify({'message': 'FCM token registered successfully'}), 200

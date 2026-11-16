@@ -1,11 +1,12 @@
 """
 Notification broadcasting routes for FCM push alerts and SMS dispatches.
+PyMongo / MongoDB Atlas backed.
 """
 
 from datetime import datetime
 from flask import Blueprint, current_app, request, jsonify
-from models import db
-from models.user import User
+from models.database import get_db
+from models.user import User, _doc_to_obj as _user_to_obj
 from models.notification import Notification
 from routes.auth import admin_required, get_authenticated_user
 from services.firebase_service import send_notification_to_all
@@ -44,8 +45,11 @@ def send_notification():
     # 2. Optionally send SMS via MSG91
     sms_count = 0
     if also_send_sms:
-        users_with_phone = User.query.filter(User.phone.isnot(None), User.phone != '').all()
-        phones = [u.phone for u in users_with_phone]
+        db = get_db()
+        users_with_phone = list(db['users'].find({
+            'phone': {'$exists': True, '$ne': None, '$nin': ['', 'null']}
+        }))
+        phones = [u['phone'] for u in users_with_phone if u.get('phone')]
         if phones:
             sms_count = send_bulk_sms(phones, f"KLNCE Transport: {title} - {body}")
 
@@ -58,8 +62,7 @@ def send_notification():
         sent_at=datetime.utcnow(),
         recipient_count=fcm_recipients + sms_count
     )
-    db.session.add(notif)
-    db.session.commit()
+    notif.save()
 
     return jsonify({
         'message': 'Notification dispatched successfully',
@@ -70,7 +73,7 @@ def send_notification():
 @notifications_bp.route('/history', methods=['GET'])
 def get_notification_history():
     """Returns past broadcast notifications for display in student and admin notification centers."""
-    notifications = Notification.query.order_by(Notification.sent_at.desc()).limit(30).all()
+    notifications = Notification.get_history(limit=30)
     return jsonify({'notifications': [n.to_dict() for n in notifications]}), 200
 
 
@@ -94,16 +97,15 @@ def update_notification(notification_id):
     if len(title) > 200:
         return jsonify({'error': 'Title must be 200 characters or fewer'}), 400
 
-    notification = db.session.get(Notification, notification_id)
+    notification = Notification.find_by_id(notification_id)
     if notification is None:
         return jsonify({'error': 'Alert not found'}), 404
 
     notification.title = title
     notification.body = body
     try:
-        db.session.commit()
+        notification.save()
     except Exception:
-        db.session.rollback()
         current_app.logger.exception('Failed to update broadcast alert %s', notification_id)
         return jsonify({'error': 'Could not update the alert'}), 500
 
@@ -117,17 +119,14 @@ def update_notification(notification_id):
 @admin_required
 def delete_notification(notification_id):
     """Removes an alert from app history; already sent messages cannot be recalled."""
-    notification = db.session.get(Notification, notification_id)
+    notification = Notification.find_by_id(notification_id)
     if notification is None:
         return jsonify({'error': 'Alert not found'}), 404
 
     try:
-        db.session.delete(notification)
-        db.session.commit()
+        notification.delete()
     except Exception:
-        db.session.rollback()
         current_app.logger.exception('Failed to delete broadcast alert %s', notification_id)
         return jsonify({'error': 'Could not delete the alert'}), 500
 
     return jsonify({'message': 'Alert deleted successfully'}), 200
-

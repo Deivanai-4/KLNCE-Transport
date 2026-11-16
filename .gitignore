@@ -46,7 +46,10 @@ frontend/.dart_tool/
 Thumbs.db
 desktop.ini
 
-# Secrets & Service Accounts
+# Temporary backup files
+*.backup
+backup_sqlalchemy/
+backend/backup_sqlalchemy/
 *.pem
 *.key
 firebase-credentials.json

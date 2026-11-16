@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-KLNCE Smart Transport System - Main Flask Application Entry Point.
+KLNCE Smart Transport System — Main Flask Application Entry Point.
+PyMongo / MongoDB Atlas backed.
 """
 
 import os
@@ -24,10 +25,10 @@ except ImportError as e:
     missing_pkg = e.name
     print(f"\n[KLNCE Transport ERROR] Missing required package: '{missing_pkg}'")
     print("Please install backend dependencies with:")
-    print("    pip install flask-cors flask-sqlalchemy sqlalchemy\n")
+    print("    pip install flask-cors pymongo dnspython\n")
     raise
 
-from models import db
+from models.database import init_db, get_db
 from config import get_config
 from routes.auth import auth_bp
 from routes.schedules import schedules_bp
@@ -52,9 +53,11 @@ def create_app(config_class=None):
     )
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False  # tokens don't expire (simple setup)
 
-    # Initialize Extensions
-    db.init_app(app)
+    # Initialise MongoDB Connection & Seed Concurrency-Safe ID Counters
+    init_db(app)
+
     JWTManager(app)
+
     # CORS configuration for Flutter Mobile & Web
     CORS(
         app,
@@ -106,9 +109,8 @@ def create_app(config_class=None):
 
     @app.route('/api/health')
     def health():
-        from sqlalchemy import text
         try:
-            db.session.execute(text('SELECT 1'))
+            get_db().command('ping')
             db_status = 'connected'
             http_code = 200
         except Exception as e:
@@ -121,13 +123,6 @@ def create_app(config_class=None):
             'institution': 'KLNCE Madurai'
         }), http_code
 
-    # Ensure tables exist in database on startup
-    with app.app_context():
-        try:
-            db.create_all()
-        except Exception as e:
-            app.logger.warning("db.create_all() warning: %s", e)
-
     return app
 
 
@@ -135,4 +130,4 @@ app = create_app()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=app.config.get('DEBUG', False))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)

@@ -1,10 +1,11 @@
 """
 GPS Live Tracking routes for driver location reporting and student live tracking.
+PyMongo / MongoDB Atlas backed.
 """
 
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from models import db
+from models.database import get_db
 from models.gps_location import GpsLocation
 from routes.auth import driver_or_admin_required, get_authenticated_user
 
@@ -44,8 +45,7 @@ def update_gps_location():
         is_active_trip=True,
         recorded_at=datetime.utcnow()
     )
-    db.session.add(gps_entry)
-    db.session.commit()
+    gps_entry.save()
 
     return jsonify({'status': 'updated', 'location': gps_entry.to_dict()}), 200
 
@@ -89,8 +89,10 @@ def end_trip():
         return jsonify({'error': 'bus_code is required'}), 400
 
     # Mark all active records for this bus as inactive
-    GpsLocation.query.filter_by(bus_code=bus_code, is_active_trip=True).update({'is_active_trip': False})
-    db.session.commit()
+    db = get_db()
+    db['gps_locations'].update_many(
+        {'bus_code': bus_code, 'is_active_trip': {'$in': [1, True]}},
+        {'$set': {'is_active_trip': 0}}
+    )
 
     return jsonify({'message': f'Trip for Bus {bus_code} completed successfully'}), 200
-

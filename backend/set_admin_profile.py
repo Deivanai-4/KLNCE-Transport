@@ -5,8 +5,8 @@ import sys
 
 from app import create_app
 from firebase_admin import auth
-from models import db
-from models.user import User
+from models.database import get_db
+from models.user import User, _doc_to_obj
 from services.firebase_service import initialize_firebase
 
 
@@ -52,6 +52,8 @@ def main() -> int:
             )
             return 1
 
+        db = get_db()
+
         if existing_target:
             admin = existing_target
         elif args.current_email:
@@ -63,7 +65,8 @@ def main() -> int:
                 )
                 return 1
         else:
-            admins = User.query.filter_by(role="admin").all()
+            admin_docs = list(db['users'].find({"role": "admin"}))
+            admins = [_doc_to_obj(d) for d in admin_docs]
             if len(admins) > 1:
                 print(
                     "Specify --current-email to select the administrator to update.",
@@ -80,7 +83,7 @@ def main() -> int:
                     role="admin",
                     college="both",
                 )
-                db.session.add(admin)
+                admin.save()
 
         if admin.email != email:
             email_in_use = User.find_by_email(email)
@@ -90,15 +93,11 @@ def main() -> int:
 
         admin.email = email
         admin.is_active = True
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            raise
+        admin.save()
 
     print("Verified Firebase account linked to the administrator profile.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

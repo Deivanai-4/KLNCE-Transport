@@ -20,6 +20,7 @@ temp/*
 
 # Temporary backup files
 *.backup
+backup_sqlalchemy/
 
 # Flutter generated files
 **/.dart_tool/
