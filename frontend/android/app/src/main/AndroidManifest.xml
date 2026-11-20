@@ -7,12 +7,18 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <!-- Android Phone SIM-based SMS Integration -->
+    <uses-permission android:name="android.permission.SEND_SMS"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-feature android:name="android.hardware.telephony" android:required="false"/>
+    <!-- Stage 8: Automatic SMS — restart scheduling after device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
     <application
         android:label="KLNCE Transport"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -36,11 +42,29 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
+        <!-- Stage 8: Boot receiver to reschedule WorkManager jobs after restart -->
+        <receiver
+            android:name=".SmsBootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="smsto"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="sms"/>
         </intent>
     </queries>
 </manifest>

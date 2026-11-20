@@ -16,110 +16,173 @@ class ApiException implements Exception {
   String toString() => 'ApiException ($statusCode): $message';
 }
 
+/// Central HTTP client for all KLNCE Transport API calls.
+///
+/// Production flow (always used in release builds, and in debug when
+/// production is reachable):
+///   App → https://klnce-transport.onrender.com/api → MongoDB Atlas
+///
+/// Debug-only automatic fallback order (when production is unreachable):
+///   1. Render production URL
+///   2. LocalTunnel dev URL  (requires `lt` running on dev PC)
+///   3. LAN Wi-Fi IP         (requires phone & PC on same Wi-Fi)
+///   4. Android emulator IP
+///   5. Web localhost
+///
+/// NO fallback occurs in release/production mode.
 class ApiService {
   static const _tokenKey = 'klnce_jwt_token';
   static String? _cachedToken;
+
+  /// The resolved working endpoint (null = use production default).
+  /// Only set during debug when production is unreachable.
   static String? _activeFallbackUrl;
 
-  /// Candidate local LAN & direct endpoints to seamlessly fallback to
-  static const List<String> _lanCandidates = [
-    'https://klnce-transport-api.loca.lt/api', // Localtunnel active public endpoint
-    'http://192.168.110.249:5000/api',         // Current laptop Wi-Fi LAN IP
-    'http://10.0.2.2:5000/api',                // Android emulator host alias
-    'http://127.0.0.1:5000/api',               // Web & USB cable (adb reverse)
+  /// Broadcasts human-readable status to connection indicator widgets.
+  static final ValueNotifier<String?> statusNotifier =
+      ValueNotifier<String?>(null);
+
+  // ─── Ordered LAN/tunnel candidates (debug mode only) ─────────────────────
+  /// Tried in order when production is unreachable in debug mode.
+  static const List<String> _devCandidates = [
+    AppConfig.publicTunnelUrl,  // LocalTunnel HTTPS
+    AppConfig.localWifiUrl,     // LAN Wi-Fi IP
+    AppConfig.emulatorUrl,      // Android emulator 10.0.2.2
+    AppConfig.webLocalhostUrl,  // Web / USB adb reverse
   ];
 
   // ── Token management ──────────────────────────────────────────────────────
 
-  /// The JWT token saved from the last login.
   static String? get savedToken => _cachedToken;
 
-  /// Persist and cache the JWT token after login.
   static Future<void> saveToken(String token) async {
     _cachedToken = token;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
   }
 
-  /// Load token from disk (called on app start).
   static Future<void> loadToken() async {
     final prefs = await SharedPreferences.getInstance();
     _cachedToken = prefs.getString(_tokenKey);
   }
 
-  /// Clear token on logout.
   static Future<void> clearToken() async {
     _cachedToken = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
   }
 
-  // ── URL Resolution ────────────────────────────────────────────────────────
+  // ── URL resolution ────────────────────────────────────────────────────────
 
+  /// The active base URL.
+  /// In release mode: always the production URL.
+  /// In debug mode: production URL unless a working fallback was auto-detected.
   static String get baseUrl {
+    // Release mode: never use a dev URL under any circumstance.
+    if (kReleaseMode) {
+      _activeFallbackUrl = null;
+      return AppConfig.productionApiUrl;
+    }
+
+    // Debug mode: use the last known-working URL if production was unreachable.
     if (_activeFallbackUrl != null && _activeFallbackUrl!.isNotEmpty) {
       return _activeFallbackUrl!;
     }
-    return AppConfig.apiBaseUrl;
+
+    return AppConfig.apiBaseUrl; // Returns production URL by default
   }
 
-  static Uri _uriFor(String endpoint, [String? overrideBaseUrl]) {
-    final effectiveBase = overrideBaseUrl ?? baseUrl;
-    if (effectiveBase.isEmpty) {
+  static Uri _uriFor(String endpoint, [String? overrideBase]) {
+    final base = overrideBase ?? baseUrl;
+    if (base.isEmpty) {
       throw ApiException(503, 'Server URL is not configured.');
     }
-    final uri = Uri.tryParse('$effectiveBase$endpoint');
+    final raw = '$base$endpoint';
+    final uri = Uri.tryParse(raw);
     if (uri == null || !uri.hasAuthority) {
-      throw ApiException(503, 'Invalid server address ($effectiveBase).');
+      throw ApiException(503, 'Invalid server address: $base');
     }
     return uri;
   }
 
-  // ── Health Check ──────────────────────────────────────────────────────────
+  // ── Health check ──────────────────────────────────────────────────────────
 
-  /// Ping /health to check reachability.
-  /// If primary URL fails, automatically probes candidate endpoints so connections never drop.
+  /// Ping /health to verify backend reachability.
+  ///
+  /// In release mode: pings the production URL only (with Render cold-start
+  /// retry). Returns false if production is unreachable — does NOT fallback
+  /// to any dev URL.
+  ///
+  /// In debug mode: tries production first, then tries dev candidates in order
+  /// and remembers the first working one so subsequent requests use it.
   static Future<bool> testHealth([String? candidateUrl]) async {
-    final testUrl = (candidateUrl != null && candidateUrl.trim().isNotEmpty)
-        ? candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '')
-        : baseUrl;
+    // If a specific candidate was supplied by the user via the test dialog,
+    // ping that URL only.
+    if (candidateUrl != null && candidateUrl.trim().isNotEmpty) {
+      final clean = candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+      final ok = await _pingUrl(clean, timeoutMs: 8000);
+      if (ok) {
+        _activeFallbackUrl = clean;
+        await AppConfig.setCustomApiUrl(clean);
+        statusNotifier.value = null;
+      }
+      return ok;
+    }
 
+    // 1. Try the current active URL first.
+    final current = baseUrl;
+    if (await _pingUrl(current, timeoutMs: 8000)) {
+      statusNotifier.value = null;
+      return true;
+    }
+
+    // 2. In release mode, do a Render cold-start retry (up to 40 s) then stop.
+    if (kReleaseMode || AppConfig.isProduction) {
+      statusNotifier.value = 'Connecting to server, please wait…';
+      final ok = await _pingUrl(AppConfig.productionApiUrl, timeoutMs: 40000);
+      statusNotifier.value = null;
+      return ok;
+    }
+
+    // 3. Debug mode: auto-probe dev candidates.
+    statusNotifier.value = 'Looking for available backend…';
+    for (final candidate in _devCandidates) {
+      if (candidate == current) continue;
+      if (await _pingUrl(candidate, timeoutMs: 2500)) {
+        debugPrint('[ApiService] Fallback endpoint found: $candidate');
+        _activeFallbackUrl = candidate;
+        statusNotifier.value = null;
+        return true;
+      }
+    }
+
+    // 4. Nothing worked — try production one last time (Render cold-start).
+    statusNotifier.value = 'Attempting production server…';
+    final prodOk = await _pingUrl(
+      AppConfig.productionApiUrl,
+      timeoutMs: 40000,
+    );
+    statusNotifier.value = null;
+    if (prodOk) {
+      _activeFallbackUrl = null; // back to production
+    }
+    return prodOk;
+  }
+
+  /// Low-level ping helper. Returns true iff /health responds with HTTP 200.
+  static Future<bool> _pingUrl(String url, {required int timeoutMs}) async {
     try {
-      final healthUri = Uri.parse('$testUrl/health');
       final headers = <String, String>{};
-      if (testUrl.contains('loca.lt')) {
+      if (url.contains('loca.lt')) {
         headers['bypass-tunnel-reminder'] = '1';
       }
       final res = await http
-          .get(healthUri, headers: headers)
-          .timeout(const Duration(seconds: 4));
-      if (res.statusCode == 200) {
-        if (candidateUrl == null && _activeFallbackUrl != null && _activeFallbackUrl != testUrl) {
-          _activeFallbackUrl = null;
-        }
-        return true;
-      }
-    } catch (_) {}
-
-    // If explicit candidateUrl was tested by user, don't auto-probe alternatives
-    if (candidateUrl != null) return false;
-
-    // Automatic Wi-Fi / LAN fallback: probe candidates
-    for (final lan in _lanCandidates) {
-      if (testUrl == lan) continue;
-      try {
-        final res = await http
-            .get(Uri.parse('$lan/health'))
-            .timeout(const Duration(milliseconds: 1500));
-        if (res.statusCode == 200) {
-          debugPrint('[ApiService] Successfully connected to endpoint: $lan');
-          _activeFallbackUrl = lan;
-          return true;
-        }
-      } catch (_) {}
+          .get(Uri.parse('$url/health'), headers: headers)
+          .timeout(Duration(milliseconds: timeoutMs));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
     }
-
-    return false;
   }
 
   // ── Headers ───────────────────────────────────────────────────────────────
@@ -143,83 +206,132 @@ class ApiService {
     return headers;
   }
 
-  // ── Internal Request Runner with Auto-Fallback ────────────────────────────
+  // ── Internal request runner with smart retry ──────────────────────────────
 
+  /// Sends a request. On network failure:
+  ///   - In release mode: retries production up to 2× with delays (cold-start).
+  ///   - In debug mode: probes dev candidates and retries on the first working one.
   static Future<http.Response> _runWithFallback(
-    Future<http.Response> Function(String effectiveBase) sendRequest,
+    Future<http.Response> Function(String base) sendRequest,
   ) async {
+    final targetUrl = baseUrl;
+    final isProductionTarget = !AppConfig.isDevelopmentUrl(targetUrl);
+
+    // ── First attempt ────────────────────────────────────────────────────────
     try {
-      final res = await sendRequest(baseUrl);
-      // Treat 502/503 or localtunnel 403 rate-limits as network drops to trigger seamless fallback!
-      if (res.statusCode == 502 ||
-          res.statusCode == 503 ||
-          (baseUrl.contains('loca.lt') && res.statusCode == 403)) {
-        throw http.ClientException('Tunnel returned ${res.statusCode}');
+      final res = await sendRequest(targetUrl);
+      if (_isBadGateway(res, targetUrl)) {
+        throw http.ClientException('Gateway error ${res.statusCode}');
       }
+      statusNotifier.value = null;
       return res;
     } catch (e) {
-      final isNetworkIssue = e is SocketException ||
-          e is http.ClientException ||
-          e is TimeoutException;
+      if (!_isNetworkError(e)) {
+        statusNotifier.value = null;
+        rethrow; // e.g. ApiException from _handleResponse — don't retry
+      }
 
-      if (!isNetworkIssue) rethrow;
+      debugPrint('[ApiService] Request to $targetUrl failed: $e');
 
-      // Primary failed or tunnel returned error; test candidate endpoints
-      for (final lan in _lanCandidates) {
-        if (lan == baseUrl) continue;
+      // ── Release mode / production target: Render cold-start retry ─────────
+      if (kReleaseMode || isProductionTarget) {
+        statusNotifier.value = 'Connecting to server, please wait…';
         try {
-          final check = await http
-              .get(Uri.parse('$lan/health'))
-              .timeout(const Duration(milliseconds: 1500));
-          if (check.statusCode == 200) {
-            debugPrint('[ApiService] Primary unreachable. Routed request to: $lan');
-            _activeFallbackUrl = lan;
-            final retryRes = await sendRequest(lan);
-            if (retryRes.statusCode != 502 &&
-                retryRes.statusCode != 503 &&
-                !(lan.contains('loca.lt') && retryRes.statusCode == 403)) {
-              return retryRes;
+          await Future.delayed(const Duration(seconds: 3));
+          for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+              final retry = await sendRequest(targetUrl);
+              if (!_isBadGateway(retry, targetUrl)) return retry;
+            } catch (retryErr) {
+              debugPrint('[ApiService] Cold-start retry $attempt: $retryErr');
+              if (attempt < 2) {
+                await Future.delayed(const Duration(seconds: 5));
+              }
             }
+          }
+        } finally {
+          statusNotifier.value = null;
+        }
+
+        throw ApiException(
+          503,
+          'Server is temporarily unavailable. Please try again in a moment.',
+        );
+      }
+
+      // ── Debug mode: probe dev candidates ──────────────────────────────────
+      for (final candidate in _devCandidates) {
+        if (candidate == targetUrl) continue;
+        try {
+          final health = await http
+              .get(Uri.parse('$candidate/health'))
+              .timeout(const Duration(milliseconds: 1800));
+          if (health.statusCode == 200) {
+            debugPrint('[ApiService] Routing through fallback: $candidate');
+            _activeFallbackUrl = candidate;
+            final retry = await sendRequest(candidate);
+            if (!_isBadGateway(retry, candidate)) return retry;
           }
         } catch (_) {}
       }
 
       throw ApiException(
         503,
-        'Unable to connect to the transport server. Please check your network connection.',
+        'Unable to connect to the transport server. '
+        'Please check your internet connection.',
       );
     }
   }
 
-  // ── Login (no token required) ─────────────────────────────────────────────
+  static bool _isBadGateway(http.Response res, String url) =>
+      res.statusCode == 502 ||
+      res.statusCode == 503 ||
+      (url.contains('loca.lt') && res.statusCode == 403);
 
-  /// POST /api/auth/login — authenticates user against database using JWT.
+  static bool _isNetworkError(Object e) =>
+      e is SocketException ||
+      e is http.ClientException ||
+      e is TimeoutException;
+
+  // ── Login (unauthenticated) ───────────────────────────────────────────────
+
   static Future<Map<String, dynamic>> postLogin({
     required String email,
     required String password,
   }) async {
     final bodyStr = jsonEncode({'email': email, 'password': password});
-
-    final response = await _runWithFallback((effectiveBase) async {
-      final uri = _uriFor('/auth/login', effectiveBase);
-      final headers = _buildHeaders(targetUrl: effectiveBase);
-      return await http
-          .post(uri, headers: headers, body: bodyStr)
-          .timeout(const Duration(seconds: 30));
+    final response = await _runWithFallback((base) async {
+      return http
+          .post(_uriFor('/auth/login', base),
+              headers: _buildHeaders(targetUrl: base), body: bodyStr)
+          .timeout(const Duration(seconds: 45));
     });
-
     return _handleResponse(response);
   }
 
-  // ── Standard authenticated methods ────────────────────────────────────────
+  // ── Byte download (e.g. Excel template) ──────────────────────────────────
+
+  static Future<List<int>> getBytes(String endpoint) async {
+    final response = await _runWithFallback((base) async {
+      return http
+          .get(_uriFor(endpoint, base),
+              headers: _buildHeaders(targetUrl: base, isJson: false))
+          .timeout(const Duration(seconds: 45));
+    });
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    throw ApiException(response.statusCode,
+        'Download failed with status ${response.statusCode}');
+  }
+
+  // ── Standard authenticated CRUD methods ───────────────────────────────────
 
   static Future<Map<String, dynamic>> get(String endpoint) async {
-    final response = await _runWithFallback((effectiveBase) async {
-      final uri = _uriFor(endpoint, effectiveBase);
-      final headers = _buildHeaders(targetUrl: effectiveBase);
-      return await http
-          .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 35));
+    final response = await _runWithFallback((base) async {
+      return http
+          .get(_uriFor(endpoint, base), headers: _buildHeaders(targetUrl: base))
+          .timeout(const Duration(seconds: 45));
     });
     return _handleResponse(response);
   }
@@ -227,12 +339,11 @@ class ApiService {
   static Future<Map<String, dynamic>> post(
       String endpoint, Map<String, dynamic> body) async {
     final bodyStr = jsonEncode(body);
-    final response = await _runWithFallback((effectiveBase) async {
-      final uri = _uriFor(endpoint, effectiveBase);
-      final headers = _buildHeaders(targetUrl: effectiveBase);
-      return await http
-          .post(uri, headers: headers, body: bodyStr)
-          .timeout(const Duration(seconds: 40));
+    final response = await _runWithFallback((base) async {
+      return http
+          .post(_uriFor(endpoint, base),
+              headers: _buildHeaders(targetUrl: base), body: bodyStr)
+          .timeout(const Duration(seconds: 45));
     });
     return _handleResponse(response);
   }
@@ -240,23 +351,21 @@ class ApiService {
   static Future<Map<String, dynamic>> put(
       String endpoint, Map<String, dynamic> body) async {
     final bodyStr = jsonEncode(body);
-    final response = await _runWithFallback((effectiveBase) async {
-      final uri = _uriFor(endpoint, effectiveBase);
-      final headers = _buildHeaders(targetUrl: effectiveBase);
-      return await http
-          .put(uri, headers: headers, body: bodyStr)
-          .timeout(const Duration(seconds: 35));
+    final response = await _runWithFallback((base) async {
+      return http
+          .put(_uriFor(endpoint, base),
+              headers: _buildHeaders(targetUrl: base), body: bodyStr)
+          .timeout(const Duration(seconds: 45));
     });
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> delete(String endpoint) async {
-    final response = await _runWithFallback((effectiveBase) async {
-      final uri = _uriFor(endpoint, effectiveBase);
-      final headers = _buildHeaders(targetUrl: effectiveBase);
-      return await http
-          .delete(uri, headers: headers)
-          .timeout(const Duration(seconds: 35));
+    final response = await _runWithFallback((base) async {
+      return http
+          .delete(_uriFor(endpoint, base),
+              headers: _buildHeaders(targetUrl: base))
+          .timeout(const Duration(seconds: 45));
     });
     return _handleResponse(response);
   }
@@ -287,13 +396,13 @@ class ApiService {
       ));
     }
 
-    final streamedResponse = await request.send().timeout(
-      const Duration(seconds: 45),
+    final streamed = await request.send().timeout(
+      const Duration(seconds: 60),
       onTimeout: () {
-        throw ApiException(408, 'Upload timed out. Check backend connection.');
+        throw ApiException(408, 'Upload timed out. Check your connection.');
       },
     );
-    final response = await http.Response.fromStream(streamedResponse);
+    final response = await http.Response.fromStream(streamed);
     return _handleResponse(response);
   }
 
@@ -310,13 +419,13 @@ class ApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (decoded is Map<String, dynamic>) return decoded;
       return {'data': decoded};
-    } else {
-      final msg = decoded is Map && decoded['error'] != null
-          ? decoded['error'].toString()
-          : (decoded is Map && decoded['message'] != null
-              ? decoded['message'].toString()
-              : 'Server error (${response.statusCode})');
-      throw ApiException(response.statusCode, msg);
     }
+
+    final msg = decoded is Map && decoded['error'] != null
+        ? decoded['error'].toString()
+        : (decoded is Map && decoded['message'] != null
+            ? decoded['message'].toString()
+            : 'Server error (${response.statusCode})');
+    throw ApiException(response.statusCode, msg);
   }
 }

@@ -160,4 +160,76 @@ configuration error if `API_BASE_URL` is missing.
 
 ---
 
+### Daily Bus Schedule Management (Stage 3)
+Allows administrators to manage date-specific bus numbers, routes, and individual stop timings for each day and session (Morning / Afternoon).
+- `GET /api/daily-schedules?date=YYYY-MM-DD&session=morning|afternoon`: Fetch daily schedules (students see published only; admins see drafts & published)
+- `GET /api/daily-schedules/<id>`: Fetch single schedule detail
+- `POST /api/daily-schedules`: (Admin) Create daily schedule (Draft / Published) with multiple buses & stops
+- `PUT /api/daily-schedules/<id>`: (Admin) Update daily schedule (auto-marks `is_updated = True` if already published)
+- `POST /api/daily-schedules/<id>/publish`: (Admin) Publish schedule to students
+- `DELETE /api/daily-schedules/<id>`: (Admin) Delete draft or published schedule
+
+---
+
+### SMS Confirmation, Bulk Sending & Status Tracking (Stage 7)
+Allows the transport administrator to compose SMS alerts, preview and validate recipients, confirm dispatch parameters, send bulk messages sequentially from their phone SIM, and track the live status of every single message.
+
+#### 1. SMS Composer
+- **Multi-Targeting Modes:**
+  - All active transport students
+  - Particular bus route (with dropdown)
+  - Particular regular bus (with dropdown)
+  - Individual students (searchable multi-select picker with name, register number, and route filters)
+- **Live Character & Segment Counter:**
+  - Automatic detection of **GSM-7** (160 chars single / 153 chars multi-segment) vs **Unicode UCS-2** (70 chars single / 67 chars multi-segment for bilingual Tamil `தமிழ்` text or emojis).
+  - Real-time remaining characters counter and total SMS credits indicator.
+- **Message Preview:** Interactive phone handset mockup rendering header, timestamps, and message bubble.
+- **Quick Templates:** Delay notices, schedule publication alerts, route change notices, bilingual Tamil alerts.
+
+#### 2. Recipient Preview & Safeguards
+- **Recipient Analytics Display:**
+  - Recipient category & Route / Bus selection
+  - Total selected students
+  - Valid mobile numbers count
+  - Invalid mobile numbers count (with specific rejection reasons)
+  - Duplicate mobile numbers count (grouped by shared numbers)
+- **Duplicate Prevention:**
+  - Enabled by default to prevent sending duplicate messages to the same mobile number (e.g. siblings sharing parent phone).
+  - Explicit approval switch: allows administrator to override and send duplicates if required.
+- **Privacy Protection:**
+  - Complete phone numbers are masked (`+91 98*** **210`) across preview lists, confirmation summaries, and status tracking tables.
+
+#### 3. Confirmation Screen
+- Pre-dispatch verification showing:
+  - Full message content & character audit
+  - Recipient category & effective student count
+  - Estimated SMS segments per student & total SMS credits
+  - Selected physical SIM (carrier, slot index, display name, subscription ID)
+  - Sending Android device model, OS version, and telephony status
+  - Pre-flight checklist for cellular signal and carrier balance
+
+#### 4. Bulk Sending & Message Status Tracking
+- **Sequential Dispatch Engine:**
+  - Transmits messages one-by-one via Android `SmsManager` with inter-message delays (default 750ms) to avoid carrier network congestion.
+  - Live progress modal with progress bar, percentage, Submitted (Green), Failed (Red), Remaining (Grey) counters, and live event log.
+  - Pause & Resume dispatch controls.
+- **Message-by-Message Audit & Tracking:**
+  - Detailed campaign screen monitoring every message's exact delivery state:
+    - `sent_to_sms_service` (submitted to Android telephony modem)
+    - `failed` (with carrier error diagnosis: `NO_SERVICE`, `RADIO_OFF`, `GENERIC_FAILURE`, etc.)
+    - `pending` / `sending`
+  - Status filter chips (All, Submitted, Failed, Pending) and search by student name or register number.
+  - **1-Click Retry Failed:** Resets failed recipients to pending and allows immediate re-dispatch of failed messages.
+
+#### SMS API Endpoints
+- `GET /api/sms/recipients`: Query eligible recipients with validation preview, duplicate detection, and masking.
+- `POST /api/sms/calculate-segments`: Calculate SMS character count, encoding, and segments.
+- `POST /api/sms/campaigns`: Create an SMS broadcast campaign session with duplicate prevention.
+- `PUT /api/sms/campaigns/<id>/status`: Update dispatch progress and individual recipient status from Android device.
+- `GET /api/sms/campaigns`: List campaign history with summaries.
+- `GET /api/sms/campaigns/<id>`: Get campaign details with status filtering and recipient search.
+- `POST /api/sms/campaigns/<id>/retry-failed`: Reset failed messages in a campaign for retry dispatch.
+
+---
+
 

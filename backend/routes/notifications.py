@@ -73,8 +73,10 @@ def send_notification():
 @notifications_bp.route('/history', methods=['GET'])
 def get_notification_history():
     """Returns past broadcast notifications for display in student and admin notification centers."""
-    notifications = Notification.get_history(limit=30)
-    return jsonify({'notifications': [n.to_dict() for n in notifications]}), 200
+    limit = min(int(request.args.get('limit', 30)), 100)
+    notifications = Notification.get_history(limit=limit)
+    notif_list = [n.to_dict() for n in notifications]
+    return jsonify({'notifications': notif_list, 'total': len(notif_list)}), 200
 
 
 @notifications_bp.route('/<int:notification_id>', methods=['PUT'])

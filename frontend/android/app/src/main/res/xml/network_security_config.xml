@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for KLNCE Transport.
+
+  PRODUCTION: HTTPS enforced. The deployed Render backend (onrender.com) uses
+  HTTPS by default — no special configuration needed.
+
+  DEVELOPMENT (debug builds only): HTTP allowed for the developer's local machine
+  when testing before Render deployment.
+
+  Students and administrators using the released APK will NEVER reach any HTTP
+  endpoint because the production URL is always HTTPS (Render.com).
+-->
+<network-security-config>
+
+    <!-- Default: HTTPS only for all traffic (enforced in release APKs) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      Debug/development overrides: allow HTTP for the developer's local server.
+      These domains are ONLY reachable from the developer's machine — they cannot
+      be accidentally used by real users in production.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Web browser localhost -->
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Android emulator host -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!--
+          Wi-Fi LAN — covers all 192.168.x.x subnets so that the
+          developer's LAN IP (which can change) always works.
+          Example: 192.168.251.249, 192.168.1.5, etc.
+        -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">192.168.1.0</domain>
+        <domain includeSubdomains="true">192.168.2.0</domain>
+        <domain includeSubdomains="true">192.168.100.0</domain>
+        <domain includeSubdomains="true">192.168.110.0</domain>
+        <domain includeSubdomains="true">192.168.251.0</domain>
+        <!-- Direct IP fallback for the current developer machine -->
+        <domain includeSubdomains="false">192.168.251.249</domain>
+    </domain-config>
+
+    <!--
+      Explicitly enforce HTTPS for the production hosts.
+      This overrides any wildcard rule that might otherwise match.
+    -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">onrender.com</domain>
+        <domain includeSubdomains="true">loca.lt</domain>
+        <domain includeSubdomains="true">mongodb.net</domain>
+    </domain-config>
+
+</network-security-config>

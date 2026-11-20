@@ -7,6 +7,11 @@ import 'services/api_service.dart';
 import 'services/schedule_service.dart';
 import 'services/bus_service.dart';
 import 'services/gps_service.dart';
+import 'services/daily_schedule_service.dart';
+import 'services/student_service.dart';
+import 'services/sms_service.dart';
+import 'services/sms_auto_service.dart';
+import 'services/announcement_service.dart';
 import 'screens/splash_screen.dart';
 import 'config/app_config.dart';
 import 'config/firebase_options.dart';
@@ -53,6 +58,7 @@ class AppColors {
   static const emerald = Color(0xFF147D75);
   static const emeraldDark = Color(0xFF0F665F);
   static const amber = Color(0xFF9A5E12);
+  static const amberDark = Color(0xFF7A480A);
   static const surface = Color(0xFFF4F6F8);
   static const card = Colors.white;
   static const textPrimary = Color(0xFF172A3B);
@@ -178,6 +184,11 @@ class KlnceTransportApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ScheduleService()),
         ChangeNotifierProvider(create: (_) => BusService()),
         ChangeNotifierProvider(create: (_) => GpsService()),
+        ChangeNotifierProvider(create: (_) => DailyScheduleService()),
+        ChangeNotifierProvider(create: (_) => StudentService()),
+        ChangeNotifierProvider(create: (_) => SmsService()),
+        ChangeNotifierProvider(create: (_) => SmsAutoService()),
+        ChangeNotifierProvider(create: (_) => AnnouncementService()),
       ],
       child: MaterialApp(
         title: 'KLNCE Smart Transport',

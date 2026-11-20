@@ -35,11 +35,16 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// Silently checks backend availability on screen load
+  /// Silently checks backend availability on screen load.
+  /// Shows the status indicator but does NOT block login — the user can
+  /// attempt to sign in while the check is still running (Render cold-start
+  /// can take up to 50 s on the free tier).
   Future<void> _checkServerAvailability() async {
+    if (mounted) setState(() => _isCheckingConnection = true);
     final ok = await ApiService.testHealth();
     if (mounted) {
       setState(() {
+        _isCheckingConnection = false;
         _isServerConnected = ok;
       });
     }
@@ -136,6 +141,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   runSpacing: 4,
                   children: [
                     ActionChip(
+                      avatar: const Icon(Icons.cloud_outlined, size: 14),
+                      label: const Text('Render Cloud', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConfig.renderProductionUrl;
+                        });
+                      },
+                    ),
+                    ActionChip(
                       label: const Text('Public Tunnel', style: TextStyle(fontSize: 11)),
                       onPressed: () {
                         setDialogState(() {
@@ -227,6 +241,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                 ),
+                ValueListenableBuilder<String?>(
+                  valueListenable: ApiService.statusNotifier,
+                  builder: (ctx, status, _) {
+                    if (status != null && isTesting) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          status,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
               ],
             ),
           ),
@@ -310,23 +344,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       KlnceBrandLockup(onTap: _browseSchedules),
-                      // Clean Test Connection Button (replaces complicated dev settings)
                       TextButton.icon(
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
                             vertical: 6,
                           ),
-                          backgroundColor: _isServerConnected == true
-                              ? const Color(0xFFE8F5E9)
-                              : (_isServerConnected == false
-                                  ? const Color(0xFFFFEBEE)
-                                  : Colors.black.withValues(alpha: 0.04)),
+                          backgroundColor: _isCheckingConnection
+                              ? Colors.black.withValues(alpha: 0.04)
+                              : (_isServerConnected == true
+                                  ? const Color(0xFFE8F5E9)
+                                  : (_isServerConnected == false
+                                      ? const Color(0xFFFFEBEE)
+                                      : Colors.black.withValues(alpha: 0.04))),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
                           ),
                         ),
-                        onPressed: _showTestConnectionDialog,
+                        onPressed: _isServerConnected == false
+                            ? _checkServerAvailability
+                            : _showTestConnectionDialog,
                         icon: _isCheckingConnection
                             ? const SizedBox(
                                 width: 12,
@@ -344,19 +381,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                         : AppColors.textSecondary),
                               ),
                         label: Text(
-                          _isServerConnected == true
-                              ? 'Connected'
-                              : (_isServerConnected == false
-                                  ? 'Connection Failed'
-                                  : 'Test Connection'),
+                          _isCheckingConnection
+                              ? 'Connecting…'
+                              : (_isServerConnected == true
+                                  ? 'Connected'
+                                  : (_isServerConnected == false
+                                      ? 'Retry Connection'
+                                      : 'Test Connection')),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: _isServerConnected == true
-                                ? const Color(0xFF2E7D32)
-                                : (_isServerConnected == false
-                                    ? const Color(0xFFC62828)
-                                    : AppColors.textPrimary),
+                            color: _isCheckingConnection
+                                ? AppColors.textSecondary
+                                : (_isServerConnected == true
+                                    ? const Color(0xFF2E7D32)
+                                    : (_isServerConnected == false
+                                        ? const Color(0xFFC62828)
+                                        : AppColors.textPrimary)),
                           ),
                         ),
                       ),
@@ -472,6 +513,41 @@ class _LoginScreenState extends State<LoginScreen> {
                                   )
                                 : const Text('Sign in'),
                           ),
+                        ),
+                        ValueListenableBuilder<String?>(
+                          valueListenable: ApiService.statusNotifier,
+                          builder: (context, status, _) {
+                            if (status != null && auth.isLoading) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: AppSpacing.sm),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Flexible(
+                                      child: Text(
+                                        status,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
                         ),
                       ],
                     ),

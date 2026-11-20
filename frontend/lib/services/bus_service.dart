@@ -4,6 +4,7 @@ import 'api_service.dart';
 
 class BusService extends ChangeNotifier {
   List<BusRoute> _searchResults = [];
+  List<BusRoute> _routes = [];
   List<Map<String, dynamic>> _allStops = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -13,10 +14,26 @@ class BusService extends ChangeNotifier {
   String? get activeTrip => _activeTrip;
 
   List<BusRoute> get searchResults => _searchResults;
+  List<BusRoute> get routes => _routes;
   List<Map<String, dynamic>> get allStops => _allStops;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   String get lastQuery => _lastQuery;
+
+  Future<void> fetchAllRoutes() async {
+    try {
+      final res = await ApiService.get('/buses');
+      final raw = res['buses'] as List<dynamic>? ??
+          res['routes'] as List<dynamic>? ??
+          [];
+      _routes =
+          raw.map((b) => BusRoute.fromJson(b as Map<String, dynamic>)).toList();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// Alias for fetchAllRoutes
+  Future<void> fetchAllBusRoutes() => fetchAllRoutes();
 
   Future<void> searchByStop(String stopName, {String? trip}) async {
     final requestRevision = ++_searchRevision;

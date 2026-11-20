@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../main.dart';
 import '../../services/bus_service.dart';
+import '../../services/api_service.dart';
 import '../../models/bus_route.dart';
 import '../../models/schedule.dart';
 import '../../widgets/bus_card.dart';
@@ -24,7 +25,8 @@ class _SearchScreenState extends State<SearchScreen>
   Timer? _scheduleTransitionTimer;
   final _focusNode = FocusNode();
 
-  final _quickStops = [
+  // Dynamic stops loaded from API; fallback to curated defaults if API unavailable
+  List<String> _quickStops = [
     'Teppakulam',
     'Periyar',
     'Thirunagar',
@@ -35,16 +37,50 @@ class _SearchScreenState extends State<SearchScreen>
     'KK Nagar',
   ];
 
-  final _tamilStops = ['தேரடி', 'பெரியார்', 'திருநகர்', 'மட்டுத்தாவணி'];
+  List<String> _tamilStops = ['தேரடி', 'பெரியார்', 'திருநகர்', 'மட்டுத்தாவணி'];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scheduleNextTransition();
+    _fetchStopsFromApi();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
+  }
+
+  Future<void> _fetchStopsFromApi() async {
+    try {
+      final res = await ApiService.get('/buses/all-stops');
+      if (res['stops'] is List) {
+        final stopsList = res['stops'] as List<dynamic>;
+        final enStops = <String>[];
+        final taStops = <String>[];
+        for (final item in stopsList) {
+          if (item is Map<String, dynamic>) {
+            final en = item['standard_name_en'] as String?;
+            final ta = item['standard_name_ta'] as String?;
+            if (en != null && en.trim().isNotEmpty && !enStops.contains(en.trim())) {
+              enStops.add(en.trim());
+            }
+            if (ta != null && ta.trim().isNotEmpty && !taStops.contains(ta.trim())) {
+              taStops.add(ta.trim());
+            }
+          }
+        }
+        if (mounted && enStops.isNotEmpty) {
+          setState(() {
+            _quickStops = enStops.take(8).toList();
+            if (taStops.isNotEmpty) {
+              _tamilStops = taStops.take(6).toList();
+            }
+          });
+        }
+      }
+    } catch (_) {
+      // Fallback remains the curated default list
+    }
   }
 
   @override

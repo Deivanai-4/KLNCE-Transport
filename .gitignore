@@ -54,6 +54,13 @@ backend/backup_sqlalchemy/
 *.key
 firebase-credentials.json
 service-account.json
+# Firebase Android/iOS config — contains API keys; add manually per machine
+**/google-services.json
+**/GoogleService-Info.plist
+# Android release signing — NEVER commit keystore or key.properties
+**/key.properties
+**/*.jks
+**/*.keystore
 
 
 # Environment files

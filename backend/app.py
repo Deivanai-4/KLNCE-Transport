@@ -32,10 +32,15 @@ from models.database import init_db, get_db
 from config import get_config
 from routes.auth import auth_bp
 from routes.schedules import schedules_bp
+from routes.daily_schedules import daily_schedules_bp
 from routes.buses import buses_bp
 from routes.gps import gps_bp
 from routes.notifications import notifications_bp
 from routes.users import users_bp
+from routes.students import students_bp
+from routes.sms import sms_bp
+from routes.sms_auto import sms_auto_bp
+from routes.announcements import announcements_bp
 
 
 def create_app(config_class=None):
@@ -51,7 +56,14 @@ def create_app(config_class=None):
         'JWT_SECRET_KEY',
         os.environ.get('JWT_SECRET_KEY', 'klnce-jwt-secret-key-2026-production-change')
     )
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False  # tokens don't expire (simple setup)
+    # Token expiry: 30 days. Override via JWT_ACCESS_TOKEN_EXPIRES_DAYS env var.
+    # Set to 0 in env to disable expiry (not recommended for production).
+    _expiry_days = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES_DAYS', '30'))
+    if _expiry_days > 0:
+        from datetime import timedelta
+        app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=_expiry_days)
+    else:
+        app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False  # disabled (dev only)
 
     # Initialise MongoDB Connection & Seed Concurrency-Safe ID Counters
     init_db(app)
@@ -86,10 +98,15 @@ def create_app(config_class=None):
     # Register Blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(schedules_bp)
+    app.register_blueprint(daily_schedules_bp)
     app.register_blueprint(buses_bp)
     app.register_blueprint(gps_bp)
     app.register_blueprint(notifications_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(students_bp)
+    app.register_blueprint(sms_bp)
+    app.register_blueprint(sms_auto_bp)
+    app.register_blueprint(announcements_bp)
 
     # Health check & root endpoints
     @app.route('/')
@@ -108,19 +125,23 @@ def create_app(config_class=None):
         })
 
     @app.route('/api/health')
+    @app.route('/health')
     def health():
+        import logging as _log
         try:
             get_db().command('ping')
             db_status = 'connected'
             http_code = 200
         except Exception as e:
-            db_status = f'disconnected ({str(e)})'
+            _log.error('[KLNCE health] MongoDB ping failed: %s', e)
+            db_status = f'disconnected ({type(e).__name__})'
             http_code = 503
 
         return jsonify({
             'status': 'healthy' if http_code == 200 else 'degraded',
             'database': db_status,
-            'institution': 'KLNCE Madurai'
+            'institution': 'KLNCE Madurai',
+            'version': '1.0.0',
         }), http_code
 
     return app

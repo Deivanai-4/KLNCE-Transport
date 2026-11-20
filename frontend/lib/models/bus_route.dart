@@ -10,6 +10,9 @@ class BusRoute {
   final int displayOrder;
   final List<RouteStop> stops;
 
+  String get routeName => (routeDisplayName != null && routeDisplayName!.isNotEmpty) ? routeDisplayName! : busCode;
+  String get busNumber => busCode;
+
   BusRoute({
     required this.id,
     required this.scheduleId,

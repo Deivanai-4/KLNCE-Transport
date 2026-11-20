@@ -54,28 +54,22 @@ def get_published_schedule():
 def list_all_schedules():
     """Lists all schedule documents (drafts, published, archived) for admin management."""
     db = get_db()
-    docs = db['schedule_documents'].find().sort('created_at', -1)
-    schedules = [ScheduleDocument._doc_to_obj(d) if hasattr(ScheduleDocument, '_doc_to_obj') else ScheduleDocument(
-        title=d.get('title', ''),
-        file_url=d.get('file_url', ''),
-        file_type=d.get('file_type', 'image'),
-        trip_direction=d.get('trip_direction', 'incoming'),
-        college=d.get('college', 'both'),
-        effective_date=d.get('effective_date'),
-        status=d.get('status', 'draft'),
-        created_by=d.get('created_by', 1),
-        verified_by=d.get('verified_by'),
-        verified_at=d.get('verified_at'),
-        published_at=d.get('published_at'),
-        created_at=d.get('created_at'),
-    ) for d in docs]
-    # Set proper _id/id on reconstructed objects
-    results = []
-    for d, s in zip(db['schedule_documents'].find().sort('created_at', -1), schedules):
-        s._doc = d
-        results.append(s.to_dict(include_routes=False))
+    try:
+        # Collect docs as a list first — avoids exhausting a cursor across two iterations
+        docs = list(db['schedule_documents'].find().sort('created_at', -1))
+    except PyMongoError:
+        current_app.logger.exception('Failed to fetch schedule list')
+        return jsonify({'error': 'Could not load schedule list'}), 500
 
-    return jsonify({'schedules': results}), 200
+    results = []
+    for d in docs:
+        try:
+            sched_obj = ScheduleDocument._doc_to_obj(d)
+            results.append(sched_obj.to_dict(include_routes=False))
+        except Exception:
+            current_app.logger.warning('Skipping malformed schedule doc _id=%s', d.get('_id'))
+
+    return jsonify({'schedules': results, 'total': len(results)}), 200
 
 
 @schedules_bp.route('/<int:schedule_id>', methods=['GET'])

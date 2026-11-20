@@ -8,11 +8,15 @@ import '../../services/schedule_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/offline_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/api_service.dart';
 import '../../models/schedule.dart';
 import '../../widgets/bus_card.dart';
 import '../../widgets/offline_banner.dart';
 import 'search_screen.dart';
 import 'tracking_screen.dart';
+import 'daily_schedule_screen.dart';
+import 'announcements_screen.dart';
+import '../../services/announcement_service.dart';
 import '../login_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
@@ -63,6 +67,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen>
 
   Future<void> _loadNotifications() async {
     try {
+      Provider.of<AnnouncementService>(context, listen: false).fetchStudentAnnouncements();
       final notifications = await NotificationService.getHistory();
       if (!mounted) return;
       setState(() {
@@ -161,6 +166,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen>
     );
   }
 
+  void _openDailySchedule() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DailyScheduleScreen()),
+    );
+  }
+
   Future<void> _logout(AuthService auth) async {
     await auth.logout();
     if (!mounted) return;
@@ -198,6 +210,31 @@ class _StudentHomeScreenState extends State<StudentHomeScreen>
         leadingWidth: 60,
         title: const Text('KLNCE Transport'),
         actions: [
+          IconButton(
+            onPressed: _openDailySchedule,
+            tooltip: 'Daily Bus Schedule',
+            icon: const Icon(Icons.calendar_month_rounded),
+          ),
+          Consumer<AnnouncementService>(
+            builder: (context, annSvc, _) {
+              final unread = annSvc.studentUnreadCount;
+              return IconButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const StudentAnnouncementsScreen(),
+                  ),
+                ),
+                tooltip: 'Transport Notices',
+                icon: Badge(
+                  isLabelVisible: unread > 0,
+                  label: Text('$unread', style: const TextStyle(fontSize: 10)),
+                  backgroundColor: Colors.red,
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+              );
+            },
+          ),
           IconButton(
             onPressed: _openSearch,
             tooltip: 'Search buses',
@@ -246,6 +283,190 @@ class _StudentHomeScreenState extends State<StudentHomeScreen>
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(date, style: Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: AppSpacing.md),
+                    Consumer<AnnouncementService>(
+                      builder: (context, annSvc, _) {
+                        final notices = annSvc.studentAnnouncements;
+                        final emergency =
+                            notices.where((a) => a.isEmergency).firstOrNull;
+                        final unread = annSvc.studentUnreadCount;
+
+                        if (emergency != null) {
+                          return Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const StudentAnnouncementsScreen(),
+                                ),
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEF2F2),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                      color: const Color(0xFFEF4444),
+                                      width: 1.5),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.warning_rounded,
+                                        color: Colors.red, size: 22),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'EMERGENCY ALERT',
+                                            style: TextStyle(
+                                              color: Colors.red,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Text(
+                                            emergency.title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.arrow_forward_ios_rounded,
+                                        size: 14, color: Colors.red),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        } else if (unread > 0) {
+                          return Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const StudentAnnouncementsScreen(),
+                                ),
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFCCFBF1),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                      color: AppColors.emerald
+                                          .withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.campaign_rounded,
+                                        color: AppColors.emerald, size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        '$unread new transport notice(s) available',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: Color(0xFF0F766E),
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(Icons.arrow_forward_ios_rounded,
+                                        size: 13, color: AppColors.emerald),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    // Quick banner to Daily Bus Schedule
+                    InkWell(
+                      onTap: _openDailySchedule,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [AppColors.navy, AppColors.navyMid],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.navy.withOpacity(0.12),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.calendar_month_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Daily Bus Schedule',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'View date-specific bus numbers & stop timings',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              color: Colors.white70,
+                              size: 14,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -417,10 +638,32 @@ class _StudentHomeScreenState extends State<StudentHomeScreen>
                 ),
               ),
             if (service.isLoading && schedule == null)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
-                  child: CircularProgressIndicator(),
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: ApiService.statusNotifier,
+                    builder: (context, status, _) {
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(),
+                          if (status != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              status,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
                 ),
               )
             else if (schedule == null)

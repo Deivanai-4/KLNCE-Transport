@@ -1,0 +1,43 @@
+# render.yaml — KLNCE Smart Transport System Deployment Configuration
+# Deploy the Flask backend on Render.com
+# Reference: https://render.com/docs/yaml-spec
+
+services:
+  - type: web
+    name: klnce-transport-api
+    runtime: python
+    plan: free           # Change to 'starter' or higher for production uptime
+    region: singapore    # Closest to India — change if needed
+    rootDir: backend
+
+    buildCommand: pip install -r requirements.txt
+
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false           # Set manually in Render dashboard — never hardcode
+      - key: MONGODB_DATABASE
+        value: klnce_transport
+      - key: SECRET_KEY
+        generateValue: true   # Render generates a secure random value automatically
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ACCESS_TOKEN_EXPIRES_DAYS
+        value: "30"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: MAX_CONTENT_LENGTH
+        value: "10485760"
+      - key: UPLOAD_FOLDER
+        value: uploads
+
+    # Persistent disk for uploaded Excel/CSV files (optional — free tier has no disk)
+    # disk:
+    #   name: klnce-uploads
+    #   mountPath: /opt/render/project/src/uploads
+    #   sizeGB: 1

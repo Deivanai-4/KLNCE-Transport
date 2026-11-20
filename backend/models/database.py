@@ -38,6 +38,10 @@ _SEQUENCE_COLLECTIONS = [
     "gps_locations",
     "notifications",
     "schedule_documents",
+    "daily_schedules",
+    "students",
+    "sms_campaigns",
+    "announcements",
 ]
 
 
@@ -66,7 +70,21 @@ def init_db(app) -> None:
         _client = mongomock.MongoClient()
         _db = _client[db_name]
     else:
-        _client = MongoClient(uri, serverSelectionTimeoutMS=10000)
+        # Production / development MongoDB Atlas connection.
+        # - serverSelectionTimeoutMS: how long to wait for a server to be found
+        # - connectTimeoutMS: TCP connection timeout per attempt
+        # - socketTimeoutMS: how long to wait for a socket read/write
+        # - maxPoolSize: connection pool for gunicorn multi-worker Render deploy
+        # - retryWrites: Atlas recommended setting for resilient writes
+        _client = MongoClient(
+            uri,
+            serverSelectionTimeoutMS=15000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            maxPoolSize=10,
+            retryWrites=True,
+            retryReads=True,
+        )
         _db = _client[db_name]
 
     logger.info("MongoDB connected (database: %s)", db_name)
@@ -127,15 +145,46 @@ def get_next_sequence(collection_name: str) -> int:
     """
     Atomically increment and return the next integer ID for the given collection.
     Thread-safe and multi-process-safe via MongoDB find_one_and_update.
+    Guarantees no ID collisions even if collections were pre-seeded or counters cleared.
     """
     db = get_db()
+
+    # Ensure counter exists and is seeded from current max(_id) if missing
+    counter = db["counters"].find_one({"_id": collection_name})
+    if counter is None:
+        highest_doc = db[collection_name].find_one(sort=[("_id", DESCENDING)])
+        max_id = 0
+        if highest_doc:
+            raw = highest_doc.get("_id")
+            try:
+                max_id = int(raw)
+            except (TypeError, ValueError):
+                max_id = 0
+        db["counters"].update_one(
+            {"_id": collection_name},
+            {"$setOnInsert": {"seq": max_id}},
+            upsert=True,
+        )
+
     result = db["counters"].find_one_and_update(
         {"_id": collection_name},
         {"$inc": {"seq": 1}},
         return_document=ReturnDocument.AFTER,
         upsert=True,
     )
-    return int(result["seq"])
+    seq = int(result["seq"])
+
+    # Double-check collision safety: advance if ID already occupied in collection
+    while db[collection_name].find_one({"_id": seq}) is not None:
+        result = db["counters"].find_one_and_update(
+            {"_id": collection_name},
+            {"$inc": {"seq": 1}},
+            return_document=ReturnDocument.AFTER,
+            upsert=True,
+        )
+        seq = int(result["seq"])
+
+    return seq
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +215,11 @@ def _create_indexes(db) -> None:
             [("bus_code", ASCENDING), ("recorded_at", DESCENDING)],
             name="gps_bus_time"
         )
+        # Compound index covering live-bus query (bus_code + is_active_trip + recorded_at)
+        db["gps_locations"].create_index(
+            [("bus_code", ASCENDING), ("is_active_trip", ASCENDING), ("recorded_at", DESCENDING)],
+            name="gps_bus_active_time"
+        )
 
         db["schedule_documents"].create_index("status", name="sched_status")
         db["schedule_documents"].create_index("trip_direction", name="sched_direction")
@@ -175,6 +229,56 @@ def _create_indexes(db) -> None:
             [("sent_at", DESCENDING)], name="notif_sent_at"
         )
         db["master_stops"].create_index("standard_name_en", name="ms_name_en")
+
+        # Daily Bus Schedules indexes
+        db["daily_schedules"].create_index(
+            [("date", ASCENDING), ("session", ASCENDING)],
+            name="daily_sched_date_session"
+        )
+        db["daily_schedules"].create_index("status", name="daily_sched_status")
+
+        # Student & Route Allocation indexes
+        db["students"].create_index("register_number", unique=True, name="students_reg_no_unique")
+        db["students"].create_index("route_name", name="students_route_name")
+        db["students"].create_index("bus_number", name="students_bus_number")
+        db["students"].create_index("department", name="students_department")
+        db["students"].create_index("year", name="students_year")
+        db["students"].create_index("is_transport_active", name="students_transport_active")
+        db["students"].create_index("student_mobile", name="students_mobile")
+
+        # SMS Campaigns indexes
+        db["sms_campaigns"].create_index([("created_at", DESCENDING)], name="sms_campaigns_created_at")
+        db["sms_campaigns"].create_index("status", name="sms_campaigns_status")
+        db["sms_campaigns"].create_index("target_type", name="sms_campaigns_target_type")
+        db["sms_campaigns"].create_index("route_name", name="sms_campaigns_route_name")
+        db["sms_campaigns"].create_index("bus_number", name="sms_campaigns_bus_number")
+
+        # Announcements indexes (Stage 9)
+        db["announcements"].create_index(
+            [("created_at", DESCENDING)], name="announcements_created_at"
+        )
+        db["announcements"].create_index("status", name="announcements_status")
+        db["announcements"].create_index("category", name="announcements_category")
+        db["announcements"].create_index("priority", name="announcements_priority")
+        db["announcements"].create_index("target_type", name="announcements_target_type")
+        db["announcements"].create_index("target_route", name="announcements_target_route")
+        db["announcements"].create_index("target_bus", name="announcements_target_bus")
+        db["announcements"].create_index(
+            [("status", ASCENDING), ("priority", DESCENDING), ("created_at", DESCENDING)],
+            name="announcements_student_feed"
+        )
+        # Text indexes for bilingual stop search (English-only terms benefit from text index)
+        try:
+            db["route_stops"].create_index(
+                [("stop_name_en", "text"), ("stop_name_ta", "text")],
+                name="route_stops_text_search"
+            )
+            db["master_stops"].create_index(
+                [("standard_name_en", "text"), ("standard_name_ta", "text"), ("aliases", "text")],
+                name="master_stops_text_search"
+            )
+        except PyMongoError as text_exc:
+            logger.warning("Text index creation skipped (non-fatal): %s", text_exc)
 
         logger.info("MongoDB indexes created/verified.")
     except PyMongoError as exc:

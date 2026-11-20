@@ -78,6 +78,12 @@ def get_all_active_buses():
     }), 200
 
 
+@gps_bp.route('/active-buses', methods=['GET'])
+def get_all_active_buses_alias():
+    """Alias for /active — Flutter client uses this URL."""
+    return get_all_active_buses()
+
+
 @gps_bp.route('/end-trip', methods=['POST'])
 @driver_or_admin_required
 def end_trip():
