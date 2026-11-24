@@ -144,6 +144,28 @@ def list_daily_schedules():
         return jsonify({'error': 'Could not load daily schedules'}), 500
 
 
+@daily_schedules_bp.route('/today', methods=['GET'])
+def get_today_daily_schedules():
+    """Convenience endpoint returning today's IST daily schedules."""
+    today_str = ist_now().strftime("%Y-%m-%d")
+    is_admin = _is_request_admin()
+    status_filter = None if is_admin else 'published'
+    try:
+        schedules = DailySchedule.list_schedules(
+            date_str=today_str,
+            status=status_filter,
+            limit=50
+        )
+        return jsonify({
+            'date': today_str,
+            'daily_schedules': [s.to_dict() for s in schedules],
+            'count': len(schedules),
+        }), 200
+    except PyMongoError:
+        current_app.logger.exception('Failed to get today daily schedules')
+        return jsonify({'error': 'Could not load today daily schedules'}), 500
+
+
 @daily_schedules_bp.route('/<int:schedule_id>', methods=['GET'])
 def get_daily_schedule_detail(schedule_id: int):
     """Fetch details of a specific daily schedule."""

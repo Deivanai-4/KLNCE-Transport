@@ -57,50 +57,51 @@ class AppConfig {
     return !isDevelopmentUrl(apiBaseUrl);
   }
 
+  /// Single invariant default API base URL for the entire application:
+  /// Always points to the deployed Render cloud backend across Web, Android, iOS.
+  static String get defaultApiUrl => productionApiUrl;
+
   /// The effective API base URL for the current build and runtime.
   ///
   /// Priority (highest → lowest):
-  ///   1. Runtime override saved in SharedPreferences (admin server test dialog)
-  ///   2. Compile-time override via --dart-define=API_BASE_URL=...
-  ///   3. ALWAYS the production Render URL — in both release and debug builds.
-  ///
-  /// The LAN/tunnel fallback is handled transparently by [ApiService.testHealth]
-  /// and [ApiService._runWithFallback] in debug mode only. The base URL itself
-  /// always starts as the production URL so that any build that reaches
-  /// production works without further configuration.
+  ///   1. Deliberate runtime override saved in SharedPreferences (via admin test dialog)
+  ///   2. Explicit compile-time override via --dart-define=API_BASE_URL=...
+  ///   3. Always the production Render cloud endpoint: https://klnce-transport.onrender.com/api
   static String get apiBaseUrl {
-    // 1. Runtime override (e.g. developer set a custom URL in settings dialog)
+    // 1. Deliberate runtime override
     if (_customUrl != null && _customUrl!.isNotEmpty) {
       return _customUrl!;
     }
 
-    // 2. Compile-time override
+    // 2. Explicit compile-time override
     final configuredUrl = _configuredApiUrl.trim();
     if (configuredUrl.isNotEmpty) {
       return configuredUrl.replaceFirst(RegExp(r'/+$'), '');
     }
 
-    // 3. Always default to production — no dependency on dev machine
+    // 3. Default: Always the production Render URL
     return productionApiUrl;
   }
 
-  /// Web debug shortcut — returns localhost for browser-based development.
-  /// Not used in production or mobile builds.
+  /// Web debug shortcut — for reference only, never used as silent override.
   static String get webDebugUrl => webLocalhostUrl;
 
   /// Load any saved custom URL override from SharedPreferences.
+  /// Automatically purges stale localhost, LAN IP, and tunnel URLs.
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(keyCustomApiUrl);
-      if (saved != null && saved.trim().isNotEmpty) {
-        final clean = saved.trim().replaceFirst(RegExp(r'/+$'), '');
-        // In release mode, silently discard any saved dev/tunnel URL.
-        if (kReleaseMode && isDevelopmentUrl(clean)) {
-          await prefs.remove(keyCustomApiUrl);
-          _customUrl = null;
-        } else {
-          _customUrl = clean;
+      for (final key in [keyCustomApiUrl, 'klnce_production_api_url']) {
+        final saved = prefs.getString(key);
+        if (saved != null) {
+          final clean = saved.trim().replaceFirst(RegExp(r'/+$'), '');
+          // Always discard stale localhost, LAN IP, or tunnel URLs so they
+          // can NEVER silently hijack the application.
+          if (isDevelopmentUrl(clean)) {
+            await prefs.remove(key);
+          } else if (clean.isNotEmpty && _customUrl == null) {
+            _customUrl = clean;
+          }
         }
       }
     } catch (_) {}

@@ -119,7 +119,7 @@ def create_app(config_class=None):
             'endpoints': {
                 'health': '/api/health',
                 'published_schedule': '/api/schedules/published',
-                'search_buses': '/api/buses/search?stop=Teppakulam',
+                'search_buses': '/api/buses/search?stop=Thirunagar',
                 'current_user': '/api/auth/me'
             }
         })

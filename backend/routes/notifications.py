@@ -70,6 +70,7 @@ def send_notification():
     }), 201
 
 
+@notifications_bp.route('', methods=['GET'])
 @notifications_bp.route('/history', methods=['GET'])
 def get_notification_history():
     """Returns past broadcast notifications for display in student and admin notification centers."""

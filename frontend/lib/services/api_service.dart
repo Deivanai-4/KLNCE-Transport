@@ -42,15 +42,6 @@ class ApiService {
   static final ValueNotifier<String?> statusNotifier =
       ValueNotifier<String?>(null);
 
-  // ─── Ordered LAN/tunnel candidates (debug mode only) ─────────────────────
-  /// Tried in order when production is unreachable in debug mode.
-  static const List<String> _devCandidates = [
-    AppConfig.publicTunnelUrl,  // LocalTunnel HTTPS
-    AppConfig.localWifiUrl,     // LAN Wi-Fi IP
-    AppConfig.emulatorUrl,      // Android emulator 10.0.2.2
-    AppConfig.webLocalhostUrl,  // Web / USB adb reverse
-  ];
-
   // ── Token management ──────────────────────────────────────────────────────
 
   static String? get savedToken => _cachedToken;
@@ -108,65 +99,41 @@ class ApiService {
   // ── Health check ──────────────────────────────────────────────────────────
 
   /// Ping /health to verify backend reachability.
-  ///
-  /// In release mode: pings the production URL only (with Render cold-start
-  /// retry). Returns false if production is unreachable — does NOT fallback
-  /// to any dev URL.
-  ///
-  /// In debug mode: tries production first, then tries dev candidates in order
-  /// and remembers the first working one so subsequent requests use it.
+  /// Handles Render cold-start window (up to 45 seconds) seamlessly.
   static Future<bool> testHealth([String? candidateUrl]) async {
     // If a specific candidate was supplied by the user via the test dialog,
     // ping that URL only.
     if (candidateUrl != null && candidateUrl.trim().isNotEmpty) {
       final clean = candidateUrl.trim().replaceFirst(RegExp(r'/+$'), '');
-      final ok = await _pingUrl(clean, timeoutMs: 8000);
+      statusNotifier.value = 'Testing connection…';
+      final ok = await _pingUrl(clean, timeoutMs: 15000);
+      statusNotifier.value = null;
       if (ok) {
         _activeFallbackUrl = clean;
         await AppConfig.setCustomApiUrl(clean);
-        statusNotifier.value = null;
       }
       return ok;
     }
 
-    // 1. Try the current active URL first.
     final current = baseUrl;
-    if (await _pingUrl(current, timeoutMs: 8000)) {
+    statusNotifier.value = 'Connecting to server…';
+
+    // 1. Initial health ping (12 seconds)
+    if (await _pingUrl(current, timeoutMs: 12000)) {
       statusNotifier.value = null;
       return true;
     }
 
-    // 2. In release mode, do a Render cold-start retry (up to 40 s) then stop.
-    if (kReleaseMode || AppConfig.isProduction) {
-      statusNotifier.value = 'Connecting to server, please wait…';
-      final ok = await _pingUrl(AppConfig.productionApiUrl, timeoutMs: 40000);
+    // 2. Render container spin-up (cold-start window up to 45 seconds)
+    if (current.contains('onrender.com') || AppConfig.isProduction) {
+      statusNotifier.value = 'Server is waking up, please wait…';
+      final ok = await _pingUrl(AppConfig.productionApiUrl, timeoutMs: 45000);
       statusNotifier.value = null;
       return ok;
     }
 
-    // 3. Debug mode: auto-probe dev candidates.
-    statusNotifier.value = 'Looking for available backend…';
-    for (final candidate in _devCandidates) {
-      if (candidate == current) continue;
-      if (await _pingUrl(candidate, timeoutMs: 2500)) {
-        debugPrint('[ApiService] Fallback endpoint found: $candidate');
-        _activeFallbackUrl = candidate;
-        statusNotifier.value = null;
-        return true;
-      }
-    }
-
-    // 4. Nothing worked — try production one last time (Render cold-start).
-    statusNotifier.value = 'Attempting production server…';
-    final prodOk = await _pingUrl(
-      AppConfig.productionApiUrl,
-      timeoutMs: 40000,
-    );
     statusNotifier.value = null;
-    if (prodOk) {
-      _activeFallbackUrl = null; // back to production
-    }
-    return prodOk;
+    return false;
   }
 
   /// Low-level ping helper. Returns true iff /health responds with HTTP 200.
@@ -208,9 +175,7 @@ class ApiService {
 
   // ── Internal request runner with smart retry ──────────────────────────────
 
-  /// Sends a request. On network failure:
-  ///   - In release mode: retries production up to 2× with delays (cold-start).
-  ///   - In debug mode: probes dev candidates and retries on the first working one.
+  /// Sends a request with smart cold-start retrying on production.
   static Future<http.Response> _runWithFallback(
     Future<http.Response> Function(String base) sendRequest,
   ) async {
@@ -221,23 +186,23 @@ class ApiService {
     try {
       final res = await sendRequest(targetUrl);
       if (_isBadGateway(res, targetUrl)) {
-        throw http.ClientException('Gateway error ${res.statusCode}');
+        throw http.ClientException('Server returned gateway status ${res.statusCode}');
       }
       statusNotifier.value = null;
       return res;
     } catch (e) {
       if (!_isNetworkError(e)) {
         statusNotifier.value = null;
-        rethrow; // e.g. ApiException from _handleResponse — don't retry
+        rethrow;
       }
 
       debugPrint('[ApiService] Request to $targetUrl failed: $e');
 
-      // ── Release mode / production target: Render cold-start retry ─────────
-      if (kReleaseMode || isProductionTarget) {
-        statusNotifier.value = 'Connecting to server, please wait…';
+      // ── Cold-start retry for production Render backend (up to 2 attempts) ──
+      if (isProductionTarget || targetUrl.contains('onrender.com')) {
+        statusNotifier.value = 'Server is waking up, please wait…';
         try {
-          await Future.delayed(const Duration(seconds: 3));
+          await Future.delayed(const Duration(seconds: 4));
           for (int attempt = 1; attempt <= 2; attempt++) {
             try {
               final retry = await sendRequest(targetUrl);
@@ -245,7 +210,7 @@ class ApiService {
             } catch (retryErr) {
               debugPrint('[ApiService] Cold-start retry $attempt: $retryErr');
               if (attempt < 2) {
-                await Future.delayed(const Duration(seconds: 5));
+                await Future.delayed(const Duration(seconds: 6));
               }
             }
           }
@@ -255,30 +220,13 @@ class ApiService {
 
         throw ApiException(
           503,
-          'Server is temporarily unavailable. Please try again in a moment.',
+          'The transport server is starting up or temporarily unreachable. Please tap Retry in a moment.',
         );
-      }
-
-      // ── Debug mode: probe dev candidates ──────────────────────────────────
-      for (final candidate in _devCandidates) {
-        if (candidate == targetUrl) continue;
-        try {
-          final health = await http
-              .get(Uri.parse('$candidate/health'))
-              .timeout(const Duration(milliseconds: 1800));
-          if (health.statusCode == 200) {
-            debugPrint('[ApiService] Routing through fallback: $candidate');
-            _activeFallbackUrl = candidate;
-            final retry = await sendRequest(candidate);
-            if (!_isBadGateway(retry, candidate)) return retry;
-          }
-        } catch (_) {}
       }
 
       throw ApiException(
         503,
-        'Unable to connect to the transport server. '
-        'Please check your internet connection.',
+        'Unable to reach server at $targetUrl. Please check your network connection.',
       );
     }
   }

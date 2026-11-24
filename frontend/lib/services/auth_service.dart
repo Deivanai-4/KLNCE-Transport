@@ -30,9 +30,16 @@ class AuthService extends ChangeNotifier {
       NotificationService.registerDeviceToken();
       notifyListeners();
       return true;
+    } on ApiException catch (error) {
+      // Clear token only if server explicitly rejected authentication (expired / invalid)
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        debugPrint('Session expired or revoked: $error');
+        await logout();
+      }
+      return false;
     } catch (error) {
-      debugPrint('Auto-login failed: $error');
-      await logout();
+      // Network or cold-start issue during auto-login — do not wipe saved token
+      debugPrint('Auto-login check deferred: $error');
       return false;
     }
   }
@@ -66,14 +73,16 @@ class AuthService extends ChangeNotifier {
       NotificationService.registerDeviceToken();
       return true;
     } on ApiException catch (error) {
+      // Dedicated messages based on HTTP status code
       _errorMessage = error.message;
-    } on http.ClientException {
+    } on http.ClientException catch (e) {
+      debugPrint('[AuthService] HTTP ClientException: $e');
       _errorMessage =
-          'Unable to connect to the transport server. Please check your internet connection.';
+          'Unable to reach the transport server. It may be starting up. Please tap Sign In again in a few moments.';
     } catch (error) {
       debugPrint('Unexpected login error: $error');
       _errorMessage =
-          'Unable to sign in. Please check your connection and try again.';
+          'Unable to sign in. Please verify your connection and try again.';
     } finally {
       _isLoading = false;
       notifyListeners();
